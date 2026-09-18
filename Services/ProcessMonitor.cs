@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BgOptimizer.Localization;
 using BgOptimizer.Models;
 
 namespace BgOptimizer.Services;
@@ -81,35 +82,35 @@ public class ProcessMonitor
         try { return p.PriorityClass.ToString(); } catch { return "N/A"; }
     }
 
-    public static (bool ok, string message) Kill(int pid, string name)
+    public static ActionResult Kill(int pid, string name)
     {
         if (ProtectedItems.IsProcessProtected(name))
-            return (false, $"'{name}' is a protected system process and cannot be killed.");
+            return new ActionResult(false, "Msg_ProcessProtectedKill", name);
         try
         {
             using var proc = Process.GetProcessById(pid);
             proc.Kill();
-            return (true, $"Killed {name} (PID {pid}).");
+            return new ActionResult(true, "Msg_Killed", name, pid);
         }
         catch (Exception ex)
         {
-            return (false, $"Failed to kill {name}: {ex.Message}");
+            return new ActionResult(false, "Msg_KillFailed", name, ex.Message);
         }
     }
 
-    public static (bool ok, string message) SetPriority(int pid, string name, ProcessPriorityClass priority)
+    public static ActionResult SetPriority(int pid, string name, ProcessPriorityClass priority)
     {
         if (ProtectedItems.IsProcessProtected(name))
-            return (false, $"'{name}' is a protected system process and cannot be modified.");
+            return new ActionResult(false, "Msg_ProcessProtectedModify", name);
         try
         {
             using var proc = Process.GetProcessById(pid);
             proc.PriorityClass = priority;
-            return (true, $"Set {name} (PID {pid}) priority to {priority}.");
+            return new ActionResult(true, "Msg_PriorityChanged", name, pid, priority);
         }
         catch (Exception ex)
         {
-            return (false, $"Failed to change priority for {name}: {ex.Message}");
+            return new ActionResult(false, "Msg_PriorityFailed", name, ex.Message);
         }
     }
 }

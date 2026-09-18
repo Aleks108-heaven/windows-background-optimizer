@@ -1,4 +1,5 @@
 using System.IO;
+using BgOptimizer.Localization;
 using BgOptimizer.Models;
 using Microsoft.Win32;
 
@@ -62,7 +63,7 @@ public class StartupManager
         return list;
     }
 
-    public (bool ok, string message) SetEnabled(StartupEntry entry, bool enabled)
+    public ActionResult SetEnabled(StartupEntry entry, bool enabled)
     {
         try
         {
@@ -76,23 +77,23 @@ public class StartupManager
                 case StartupSource.StartupFolderCommon:
                     return SetFolderShortcutEnabled(entry, enabled);
                 default:
-                    return (false, "Unknown startup source.");
+                    return new ActionResult(false, "Msg_StartupUnknownSource");
             }
         }
         catch (UnauthorizedAccessException)
         {
-            return (false, $"Access denied changing '{entry.Name}'. Some all-users entries need the app run elevated.");
+            return new ActionResult(false, "Msg_StartupAccessDenied", entry.Name);
         }
         catch (Exception ex)
         {
-            return (false, $"Failed to update '{entry.Name}': {ex.Message}");
+            return new ActionResult(false, "Msg_StartupFailed", entry.Name, ex.Message);
         }
     }
 
-    private static (bool, string) SetRegistryApproval(RegistryKey hive, StartupEntry entry, bool enabled)
+    private static ActionResult SetRegistryApproval(RegistryKey hive, StartupEntry entry, bool enabled)
     {
         using var approvedKey = hive.CreateSubKey(ApprovedRunKeyPath, writable: true);
-        if (approvedKey == null) return (false, "Could not open StartupApproved registry key.");
+        if (approvedKey == null) return new ActionResult(false, "Msg_StartupApprovedKeyError");
 
         // 12-byte value; only the first byte (enabled flag) matters for our purposes.
         var value = new byte[12];
@@ -100,10 +101,10 @@ public class StartupManager
         approvedKey.SetValue(entry.Name, value, RegistryValueKind.Binary);
 
         entry.Enabled = enabled;
-        return (true, $"{(enabled ? "Enabled" : "Disabled")} startup item '{entry.Name}'.");
+        return new ActionResult(true, enabled ? "Msg_StartupEnabled" : "Msg_StartupDisabled", entry.Name);
     }
 
-    private static (bool, string) SetFolderShortcutEnabled(StartupEntry entry, bool enabled)
+    private static ActionResult SetFolderShortcutEnabled(StartupEntry entry, bool enabled)
     {
         var current = entry.Command;
         string target;
@@ -113,11 +114,11 @@ public class StartupManager
         else if (!enabled && !current.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase))
             target = current + ".disabled";
         else
-            return (true, "No change needed.");
+            return new ActionResult(true, "Msg_StartupNoChange");
 
         File.Move(current, target, overwrite: false);
         entry.Command = target;
         entry.Enabled = enabled;
-        return (true, $"{(enabled ? "Enabled" : "Disabled")} startup item '{entry.Name}'.");
+        return new ActionResult(true, enabled ? "Msg_StartupEnabled" : "Msg_StartupDisabled", entry.Name);
     }
 }

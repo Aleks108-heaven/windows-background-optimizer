@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
+using BgOptimizer.Localization;
 using BgOptimizer.Models;
 using BgOptimizer.Services;
 
@@ -27,6 +28,10 @@ public partial class MainWindow : Window
         StartupGrid.ItemsSource = _startupItems;
         ServiceGrid.ItemsSource = _services;
 
+        LanguageCombo.ItemsSource = Loc.Languages;
+        LanguageCombo.SelectedItem = Loc.Languages.First(l => l.Code == Loc.Instance.Language);
+        LanguageCombo.SelectionChanged += LanguageCombo_SelectionChanged;
+
         RefreshProcesses();
         RefreshStartup();
         RefreshServices();
@@ -36,11 +41,19 @@ public partial class MainWindow : Window
         _refreshTimer.Start();
     }
 
+    private void LanguageCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (LanguageCombo.SelectedItem is Loc.LanguageOption option)
+            Loc.Instance.Language = option.Code;
+    }
+
     private void Log(string message) =>
         LogList.Items.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {message}");
 
+    private void Log(ActionResult result) => Log(result.Message);
+
     private bool Confirm(string message) =>
-        MessageBox.Show(message, "Confirm action", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        MessageBox.Show(message, Loc.Instance["Dlg_ConfirmTitle"], MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
     // ---------- Processes ----------
 
@@ -63,14 +76,14 @@ public partial class MainWindow : Window
         if (ProcessGrid.SelectedItem is not ProcessEntry entry) return;
         if (entry.IsProtected)
         {
-            Log($"Blocked: '{entry.Name}' is a protected system process.");
+            Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name));
             return;
         }
-        if (!Confirm($"Kill process '{entry.Name}' (PID {entry.Pid})?")) return;
+        if (!Confirm(Loc.Instance.Format("Dlg_ConfirmKill", entry.Name, entry.Pid))) return;
 
-        var (ok, message) = ProcessMonitor.Kill(entry.Pid, entry.Name);
-        Log(message);
-        if (ok) RefreshProcesses();
+        var result = ProcessMonitor.Kill(entry.Pid, entry.Name);
+        Log(result);
+        if (result.Ok) RefreshProcesses();
     }
 
     private void ApplyPriority_Click(object sender, RoutedEventArgs e)
@@ -78,15 +91,15 @@ public partial class MainWindow : Window
         if (ProcessGrid.SelectedItem is not ProcessEntry entry) return;
         if (entry.IsProtected)
         {
-            Log($"Blocked: '{entry.Name}' is a protected system process.");
+            Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name));
             return;
         }
         var priorityName = (PriorityCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "Normal";
         if (!Enum.TryParse<ProcessPriorityClass>(priorityName, out var priority)) return;
 
-        var (ok, message) = ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority);
-        Log(message);
-        if (ok) RefreshProcesses();
+        var result = ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority);
+        Log(result);
+        if (result.Ok) RefreshProcesses();
     }
 
     // ---------- Startup ----------
@@ -102,19 +115,19 @@ public partial class MainWindow : Window
     private void EnableStartup_Click(object sender, RoutedEventArgs e)
     {
         if (StartupGrid.SelectedItem is not StartupEntry entry) return;
-        var (ok, message) = _startupManager.SetEnabled(entry, true);
-        Log(message);
-        if (ok) RefreshStartup();
+        var result = _startupManager.SetEnabled(entry, true);
+        Log(result);
+        if (result.Ok) RefreshStartup();
     }
 
     private void DisableStartup_Click(object sender, RoutedEventArgs e)
     {
         if (StartupGrid.SelectedItem is not StartupEntry entry) return;
-        if (!Confirm($"Disable '{entry.Name}' from starting up automatically?")) return;
+        if (!Confirm(Loc.Instance.Format("Dlg_ConfirmDisableStartup", entry.Name))) return;
 
-        var (ok, message) = _startupManager.SetEnabled(entry, false);
-        Log(message);
-        if (ok) RefreshStartup();
+        var result = _startupManager.SetEnabled(entry, false);
+        Log(result);
+        if (result.Ok) RefreshStartup();
     }
 
     // ---------- Services ----------
@@ -132,14 +145,14 @@ public partial class MainWindow : Window
         if (ServiceGrid.SelectedItem is not ServiceEntry entry) return;
         if (entry.IsProtected)
         {
-            Log($"Blocked: '{entry.DisplayName}' is a protected system service.");
+            Log(Loc.Instance.Format("Msg_BlockedService", entry.DisplayName));
             return;
         }
-        if (needsConfirm && !Confirm($"Set '{entry.DisplayName}' startup type to {mode}?")) return;
+        if (needsConfirm && !Confirm(Loc.Instance.Format("Dlg_ConfirmServiceMode", entry.DisplayName, mode))) return;
 
-        var (ok, message) = _svcManager.SetStartMode(entry, mode);
-        Log(message);
-        if (ok) RefreshServices();
+        var result = _svcManager.SetStartMode(entry, mode);
+        Log(result);
+        if (result.Ok) RefreshServices();
     }
 
     private void ServiceAuto_Click(object sender, RoutedEventArgs e) => SetServiceMode("Auto", needsConfirm: false);
@@ -151,13 +164,13 @@ public partial class MainWindow : Window
         if (ServiceGrid.SelectedItem is not ServiceEntry entry) return;
         if (entry.IsProtected)
         {
-            Log($"Blocked: '{entry.DisplayName}' is a protected system service.");
+            Log(Loc.Instance.Format("Msg_BlockedService", entry.DisplayName));
             return;
         }
-        if (!Confirm($"Stop service '{entry.DisplayName}' right now?")) return;
+        if (!Confirm(Loc.Instance.Format("Dlg_ConfirmStopService", entry.DisplayName))) return;
 
-        var (ok, message) = _svcManager.Stop(entry);
-        Log(message);
-        if (ok) RefreshServices();
+        var result = _svcManager.Stop(entry);
+        Log(result);
+        if (result.Ok) RefreshServices();
     }
 }

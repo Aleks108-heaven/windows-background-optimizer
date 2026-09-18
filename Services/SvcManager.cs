@@ -1,4 +1,5 @@
 using System.Management;
+using BgOptimizer.Localization;
 using BgOptimizer.Models;
 
 namespace BgOptimizer.Services;
@@ -29,10 +30,10 @@ public class SvcManager
     }
 
     /// <param name="mode">"Auto", "Manual", or "Disabled"</param>
-    public (bool ok, string message) SetStartMode(ServiceEntry entry, string mode)
+    public ActionResult SetStartMode(ServiceEntry entry, string mode)
     {
         if (entry.IsProtected)
-            return (false, $"'{entry.DisplayName}' is a protected system service and cannot be modified.");
+            return new ActionResult(false, "Msg_ServiceProtectedModify", entry.DisplayName);
 
         try
         {
@@ -40,27 +41,27 @@ public class SvcManager
             using var results = searcher.Get();
             var service = results.Cast<ManagementObject>().FirstOrDefault();
             if (service == null)
-                return (false, $"Service '{entry.Name}' not found.");
+                return new ActionResult(false, "Msg_ServiceNotFound", entry.Name);
 
             var result = service.InvokeMethod("ChangeStartMode", new object[] { mode });
             var returnCode = Convert.ToUInt32(result);
             if (returnCode == 0)
             {
                 entry.StartType = mode;
-                return (true, $"Set '{entry.DisplayName}' startup type to {mode}.");
+                return new ActionResult(true, "Msg_ServiceModeChanged", entry.DisplayName, mode);
             }
-            return (false, $"Failed to change '{entry.DisplayName}' (WMI error code {returnCode}).");
+            return new ActionResult(false, "Msg_ServiceModeFailed", entry.DisplayName, returnCode);
         }
         catch (Exception ex)
         {
-            return (false, $"Failed to change '{entry.DisplayName}': {ex.Message}");
+            return new ActionResult(false, "Msg_ServiceModeException", entry.DisplayName, ex.Message);
         }
     }
 
-    public (bool ok, string message) Stop(ServiceEntry entry)
+    public ActionResult Stop(ServiceEntry entry)
     {
         if (entry.IsProtected)
-            return (false, $"'{entry.DisplayName}' is a protected system service and cannot be stopped.");
+            return new ActionResult(false, "Msg_ServiceProtectedStop", entry.DisplayName);
 
         try
         {
@@ -71,11 +72,11 @@ public class SvcManager
                 controller.WaitForStatus(System.ServiceProcess.ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
             }
             entry.Status = controller.Status.ToString();
-            return (true, $"Stopped '{entry.DisplayName}'.");
+            return new ActionResult(true, "Msg_ServiceStopped", entry.DisplayName);
         }
         catch (Exception ex)
         {
-            return (false, $"Failed to stop '{entry.DisplayName}': {ex.Message}");
+            return new ActionResult(false, "Msg_ServiceStopFailed", entry.DisplayName, ex.Message);
         }
     }
 
