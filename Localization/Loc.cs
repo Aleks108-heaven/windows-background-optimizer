@@ -55,6 +55,8 @@ public class Loc : INotifyPropertyChanged
         ["en"] = new()
         {
             ["AppTitle"] = "Background Optimizer",
+            ["Tray_Open"] = "Open",
+            ["Tray_Exit"] = "Exit",
             ["Tab_Processes"] = "Processes",
             ["Tab_Startup"] = "Startup Apps",
             ["Tab_Services"] = "Services",
@@ -123,6 +125,8 @@ public class Loc : INotifyPropertyChanged
         ["uk"] = new()
         {
             ["AppTitle"] = "Оптимізатор фонових процесів",
+            ["Tray_Open"] = "Відкрити",
+            ["Tray_Exit"] = "Вийти",
             ["Tab_Processes"] = "Процеси",
             ["Tab_Startup"] = "Автозавантаження",
             ["Tab_Services"] = "Служби",
@@ -191,6 +195,8 @@ public class Loc : INotifyPropertyChanged
         ["es"] = new()
         {
             ["AppTitle"] = "Optimizador de segundo plano",
+            ["Tray_Open"] = "Abrir",
+            ["Tray_Exit"] = "Salir",
             ["Tab_Processes"] = "Procesos",
             ["Tab_Startup"] = "Aplicaciones de inicio",
             ["Tab_Services"] = "Servicios",
@@ -259,6 +265,8 @@ public class Loc : INotifyPropertyChanged
         ["de"] = new()
         {
             ["AppTitle"] = "Hintergrund-Optimierer",
+            ["Tray_Open"] = "Öffnen",
+            ["Tray_Exit"] = "Beenden",
             ["Tab_Processes"] = "Prozesse",
             ["Tab_Startup"] = "Autostart-Apps",
             ["Tab_Services"] = "Dienste",
@@ -327,6 +335,8 @@ public class Loc : INotifyPropertyChanged
         ["it"] = new()
         {
             ["AppTitle"] = "Ottimizzatore processi in background",
+            ["Tray_Open"] = "Apri",
+            ["Tray_Exit"] = "Esci",
             ["Tab_Processes"] = "Processi",
             ["Tab_Startup"] = "App di avvio",
             ["Tab_Services"] = "Servizi",
@@ -395,6 +405,8 @@ public class Loc : INotifyPropertyChanged
         ["pl"] = new()
         {
             ["AppTitle"] = "Optymalizator procesów w tle",
+            ["Tray_Open"] = "Otwórz",
+            ["Tray_Exit"] = "Zamknij",
             ["Tab_Processes"] = "Procesy",
             ["Tab_Startup"] = "Aplikacje startowe",
             ["Tab_Services"] = "Usługi",
@@ -463,6 +475,8 @@ public class Loc : INotifyPropertyChanged
         ["ru"] = new()
         {
             ["AppTitle"] = "Оптимизатор фоновых процессов",
+            ["Tray_Open"] = "Открыть",
+            ["Tray_Exit"] = "Выход",
             ["Tab_Processes"] = "Процессы",
             ["Tab_Startup"] = "Автозагрузка",
             ["Tab_Services"] = "Службы",

@@ -5,6 +5,8 @@ using System.Windows.Threading;
 using BgOptimizer.Localization;
 using BgOptimizer.Models;
 using BgOptimizer.Services;
+using Application = System.Windows.Application;
+using MessageBox = System.Windows.MessageBox;
 
 namespace BgOptimizer;
 
@@ -19,10 +21,12 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ServiceEntry> _services = new();
 
     private readonly DispatcherTimer _refreshTimer;
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
 
     public MainWindow()
     {
         InitializeComponent();
+        SetupTrayIcon();
 
         ProcessGrid.ItemsSource = _processes;
         StartupGrid.ItemsSource = _startupItems;
@@ -45,6 +49,70 @@ public partial class MainWindow : Window
     {
         if (LanguageCombo.SelectedItem is Loc.LanguageOption option)
             Loc.Instance.Language = option.Code;
+    }
+
+    // ---------- System tray ----------
+
+    private void SetupTrayIcon()
+    {
+        var openItem = new System.Windows.Forms.ToolStripMenuItem(Loc.Instance["Tray_Open"]);
+        openItem.Click += (_, _) => RestoreFromTray();
+
+        var exitItem = new System.Windows.Forms.ToolStripMenuItem(Loc.Instance["Tray_Exit"]);
+        exitItem.Click += (_, _) =>
+        {
+            _trayIcon!.Visible = false;
+            Application.Current.Shutdown();
+        };
+
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add(openItem);
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add(exitItem);
+
+        _trayIcon = new System.Windows.Forms.NotifyIcon
+        {
+            Icon = CreateTrayIcon(),
+            Visible = true,
+            Text = Loc.Instance["AppTitle"],
+            ContextMenuStrip = menu,
+        };
+        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+
+        Loc.Instance.PropertyChanged += (_, _) =>
+        {
+            _trayIcon.Text = Loc.Instance["AppTitle"];
+            openItem.Text = Loc.Instance["Tray_Open"];
+            exitItem.Text = Loc.Instance["Tray_Exit"];
+        };
+
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized)
+                Hide();
+        };
+
+        Closed += (_, _) => _trayIcon.Dispose();
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private static System.Drawing.Icon CreateTrayIcon()
+    {
+        using var bmp = new System.Drawing.Bitmap(32, 32);
+        using var g = System.Drawing.Graphics.FromImage(bmp);
+        g.Clear(System.Drawing.Color.Transparent);
+        using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(14, 99, 156));
+        g.FillEllipse(brush, 1, 1, 30, 30);
+        using var font = new System.Drawing.Font("Segoe UI", 14, System.Drawing.FontStyle.Bold);
+        var textSize = g.MeasureString("B", font);
+        g.DrawString("B", font, System.Drawing.Brushes.White, (32 - textSize.Width) / 2, (32 - textSize.Height) / 2 - 1);
+        return System.Drawing.Icon.FromHandle(bmp.GetHicon());
     }
 
     private void Log(string message) =>
