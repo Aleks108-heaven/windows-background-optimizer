@@ -14,6 +14,7 @@ internal static class ProtectedItems
         "svchost", "dwm", "fontdrvhost", "sihost", "explorer",
         "taskhostw", "ctfmon", "conhost", "dllhost", "spoolsv",
         "audiodg", "WUDFHost", "RuntimeBroker", "WmiPrvSE",
+        "MsMpEng", "NisSrv", "SecurityHealthService", "MpDefenderCoreService",
     };
 
     public static readonly HashSet<string> ProtectedServiceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -26,6 +27,7 @@ internal static class ProtectedItems
         "wuauserv", "AudioEndpointBuilder", "Audiosrv", "Themes", "WSearch",
         "DeviceInstall", "DcomLaunch", "SystemEventsBroker", "TimeBrokerSvc",
         "PcaSvc", "shpamsvc", "StateRepository", "InstallService",
+        "Sense", "WdNisSvc", "wscsvc",
     };
 
     public static bool IsProcessProtected(string processName) => ProtectedProcessNames.Contains(processName);

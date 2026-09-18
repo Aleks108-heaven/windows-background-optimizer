@@ -37,9 +37,10 @@ public class SvcManager
 
         try
         {
-            using var searcher = new ManagementObjectSearcher($"SELECT * FROM Win32_Service WHERE Name = '{Escape(entry.Name)}'");
+            using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_Service");
             using var results = searcher.Get();
-            var service = results.Cast<ManagementObject>().FirstOrDefault();
+            var service = results.Cast<ManagementObject>()
+                .FirstOrDefault(o => string.Equals((string?)o["Name"], entry.Name, StringComparison.Ordinal));
             if (service == null)
                 return new ActionResult(false, "Msg_ServiceNotFound", entry.Name);
 
@@ -79,6 +80,4 @@ public class SvcManager
             return new ActionResult(false, "Msg_ServiceStopFailed", entry.DisplayName, ex.Message);
         }
     }
-
-    private static string Escape(string s) => s.Replace("'", "''");
 }
