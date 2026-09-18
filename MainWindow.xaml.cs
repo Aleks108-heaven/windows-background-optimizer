@@ -104,15 +104,9 @@ public partial class MainWindow : Window
 
     private static System.Drawing.Icon CreateTrayIcon()
     {
-        using var bmp = new System.Drawing.Bitmap(32, 32);
-        using var g = System.Drawing.Graphics.FromImage(bmp);
-        g.Clear(System.Drawing.Color.Transparent);
-        using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(14, 99, 156));
-        g.FillEllipse(brush, 1, 1, 30, 30);
-        using var font = new System.Drawing.Font("Segoe UI", 14, System.Drawing.FontStyle.Bold);
-        var textSize = g.MeasureString("B", font);
-        g.DrawString("B", font, System.Drawing.Brushes.White, (32 - textSize.Width) / 2, (32 - textSize.Height) / 2 - 1);
-        return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+        var resourceInfo = Application.GetResourceStream(new Uri("icon.ico", UriKind.Relative));
+        using var stream = resourceInfo!.Stream;
+        return new System.Drawing.Icon(stream);
     }
 
     private void Log(string message) =>
