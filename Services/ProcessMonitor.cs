@@ -64,7 +64,12 @@ public class ProcessMonitor
         foreach (var staleId in _tracked.Keys.Where(id => !seenPids.Contains(id)).ToList())
             _tracked.Remove(staleId);
 
-        return _tracked.Values.OrderByDescending(p => p.CpuPercent).ToList();
+        // Stable PID order rather than re-sorting by CPU% every tick: the UI keeps the
+        // same ProcessEntry instances across refreshes, so a stable order means the grid
+        // only has to move the few rows that actually started/exited instead of reshuffling
+        // most of the list every 2 seconds. Users can still click the CPU/Memory column
+        // headers to sort live via the DataGrid's own sorting.
+        return _tracked.Values.OrderBy(p => p.Pid).ToList();
     }
 
     private static TimeSpan SafeCpuTime(Process p)

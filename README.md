@@ -42,11 +42,32 @@ The protected list can't know about every third-party or OEM (e.g. laptop vendor
 
 ## Requirements
 
-- Windows 11 (or Windows 10)
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) to build
-- Administrator rights to run (the app self-elevates via UAC on launch)
+**To just run a pre-built copy** (no dev tools needed):
+- Windows 10 (64-bit, version 1809 or later) or Windows 11
+- Administrator rights — the app self-elevates via UAC on every launch, so you'll get a UAC prompt each time
+- No .NET runtime needs to be installed separately — see **Installing a pre-built copy** below
+- Hardware requirements are trivial: the app itself typically uses well under 1% CPU at idle and roughly 100–300 MB RAM. Any 64-bit Windows 10/11 laptop from the last decade or so is more than enough — an Intel Core i5 with 16 GB RAM is comfortably above what's needed.
 
-## Build & run
+**To build from source:**
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- Windows (WPF only builds/runs on Windows)
+
+## Installing a pre-built copy
+
+Every push to `master`/`main` runs the CI workflow ([.github/workflows/build.yml](.github/workflows/build.yml)), which publishes a **self-contained** build — it bundles its own copy of the .NET runtime, so the machine you install it on doesn't need .NET installed at all.
+
+1. Go to the repo's **Actions** tab on GitHub and open the latest successful **Build** run (you'll need a GitHub account signed in to download artifacts — this is a GitHub requirement, not specific to this repo).
+2. Download the `BgOptimizer` artifact (a `.zip`) and extract it. The extracted folder contains `BgOptimizer.exe` plus its bundled runtime files — keep them together, all in the same folder.
+3. Copy that whole folder to the target laptop (USB drive, file share, etc.) — no installer needed.
+4. Run `BgOptimizer.exe`. Expect two prompts on first launch, both expected and safe to accept:
+   - **Windows SmartScreen** ("Windows protected your PC") — the exe isn't code-signed, so files downloaded from the internet trigger this the first time. Click **More info** → **Run anyway**.
+   - **UAC** (User Account Control) — the app needs admin rights to manage services and kill other processes. Click **Yes**.
+
+If a security tool (Defender or a laptop OEM's antivirus) flags it heuristically because it can kill processes and reconfigure services, that's expected for this class of tool — check **Safety** above for what's actually locked down.
+
+For wider distribution than "hand someone a folder," a tagged GitHub Release with the zip attached as a release asset would let anyone download it without needing repo access or a GitHub login — ask if you'd like that set up.
+
+## Build & run from source
 
 ```bash
 dotnet build
@@ -74,4 +95,4 @@ icon.ico                    App icon (exe, window title bar, and tray all share 
 
 ## CI/CD
 
-Every push and pull request triggers a GitHub Actions build on `windows-latest` (required since this is a WPF app), which restores, builds, and publishes the app, uploading the output as a downloadable artifact from the run.
+Every push and pull request triggers a GitHub Actions build on `windows-latest` (required since this is a WPF app), which restores, builds, and publishes a self-contained `win-x64` build, uploading it as a downloadable artifact from the run. See **Installing a pre-built copy** above for how to use it.

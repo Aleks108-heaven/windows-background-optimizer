@@ -28,6 +28,9 @@ internal static class ProtectedItems
         "DeviceInstall", "DcomLaunch", "SystemEventsBroker", "TimeBrokerSvc",
         "PcaSvc", "shpamsvc", "StateRepository", "InstallService",
         "Sense", "WdNisSvc", "wscsvc",
+        // Owned by TrustedInstaller: WMI's ChangeStartMode returns access-denied (code 2)
+        // for this even when running as admin, so it's blocked before we bother trying.
+        "BrokerInfrastructure",
     };
 
     public static bool IsProcessProtected(string processName) => ProtectedProcessNames.Contains(processName);

@@ -9,6 +9,7 @@ public enum StartupSource
     RegistryRunHklm,
     StartupFolderUser,
     StartupFolderCommon,
+    ScheduledTask,
 }
 
 public class StartupEntry : INotifyPropertyChanged
@@ -28,6 +29,7 @@ public class StartupEntry : INotifyPropertyChanged
         StartupSource.RegistryRunHklm => Loc.Instance["Src_RegistryHklm"],
         StartupSource.StartupFolderUser => Loc.Instance["Src_StartupFolderUser"],
         StartupSource.StartupFolderCommon => Loc.Instance["Src_StartupFolderCommon"],
+        StartupSource.ScheduledTask => Loc.Instance["Src_ScheduledTask"],
         _ => Loc.Instance["Src_Unknown"],
     };
 
