@@ -24,6 +24,7 @@ public class SvcManager
                 Status = obj["State"]?.ToString() ?? "Unknown",
                 StartType = obj["StartMode"]?.ToString() ?? "Unknown",
                 IsProtected = ProtectedItems.IsServiceProtected(name),
+                Category = ItemClassifier.ClassifyService(name, obj["DisplayName"]?.ToString() ?? name),
             });
         }
         return list.OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
@@ -78,6 +79,30 @@ public class SvcManager
         catch (Exception ex)
         {
             return new ActionResult(false, "Msg_ServiceStopFailed", entry.DisplayName, ex.Message);
+        }
+    }
+
+    // Used to undo a Stop; not exposed as its own toolbar button since Windows
+    // already starts Automatic services on its own and Manual ones on demand.
+    public ActionResult Start(ServiceEntry entry)
+    {
+        if (entry.IsProtected)
+            return new ActionResult(false, "Msg_ServiceProtectedModify", entry.DisplayName);
+
+        try
+        {
+            using var controller = new System.ServiceProcess.ServiceController(entry.Name);
+            if (controller.Status != System.ServiceProcess.ServiceControllerStatus.Running)
+            {
+                controller.Start();
+                controller.WaitForStatus(System.ServiceProcess.ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
+            }
+            entry.Status = controller.Status.ToString();
+            return new ActionResult(true, "Msg_ServiceStarted", entry.DisplayName);
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult(false, "Msg_ServiceStartFailed", entry.DisplayName, ex.Message);
         }
     }
 }

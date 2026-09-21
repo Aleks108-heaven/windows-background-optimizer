@@ -23,6 +23,8 @@ public class StartupEntry : INotifyPropertyChanged
     public string Command { get; set; } = "";
     public StartupSource Source { get; set; }
     public bool Enabled { get; set; }
+    public ItemCategory Category { get; set; }
+    public string CategoryDisplay => Category.ToDisplay();
     public string SourceDisplay => Source switch
     {
         StartupSource.RegistryRunHkcu => Loc.Instance["Src_RegistryHkcu"],

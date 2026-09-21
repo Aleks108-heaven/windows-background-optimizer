@@ -30,6 +30,9 @@ public class StartupManager
         results.AddRange(ReadFolder(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), StartupSource.StartupFolderCommon));
         results.AddRange(ReadScheduledTasks());
 
+        foreach (var entry in results)
+            entry.Category = ItemClassifier.ClassifyStartup(entry.Name, entry.Command);
+
         return results.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
@@ -142,9 +145,18 @@ public class StartupManager
             var output = RunSchtasks("/query", "/fo", "csv");
             if (output == null) return list;
 
+            var lines = output.Split('\n');
+            if (lines.Length == 0) return list;
+            var headerLine = lines[0].Trim();
+
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var line in output.Split('\n').Skip(1)) // skip the CSV header row
+            foreach (var line in lines.Skip(1))
             {
+                // On large task lists, schtasks re-emits the CSV header partway through its
+                // (redirected) output - not just once at the top - so every repeat has to be
+                // filtered here or it gets parsed as a bogus task named "TaskName".
+                if (string.Equals(line.Trim(), headerLine, StringComparison.OrdinalIgnoreCase)) continue;
+
                 var fields = SplitSchtasksCsvLine(line);
                 if (fields.Length < 3) continue;
 

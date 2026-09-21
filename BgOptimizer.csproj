@@ -11,6 +11,9 @@
     <AssemblyName>BgOptimizer</AssemblyName>
     <RootNamespace>BgOptimizer</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0</Version>
+    <Product>Background Optimizer</Product>
+    <Company>Aleks108-heaven</Company>
     <!-- Needed so a plain "dotnet restore" (no -r flag) still fetches the win-x64
          self-contained runtime packages that CI's later no-restore publish step
          for win-x64 depends on. -->

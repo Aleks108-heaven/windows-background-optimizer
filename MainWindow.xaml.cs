@@ -24,6 +24,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _refreshTimer;
     private System.Windows.Forms.NotifyIcon? _trayIcon;
 
+    // LIFO log of reversible changes made this session (Startup enable/disable,
+    // Service start-type changes, Service stop). Not persisted across restarts -
+    // undoing after closing the app isn't meaningfully different from just
+    // reopening Startup Apps/Services and setting the value back by hand.
+    private readonly Stack<Func<ActionResult>> _undoStack = new();
+
     // 30 samples at the 2s refresh interval mirrors Task Manager's 60-second window.
     private const int GraphHistoryLength = 30;
     private readonly List<double> _cpuHistory = new();
@@ -284,10 +290,18 @@ public partial class MainWindow : Window
         var priorityName = (PriorityCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "Normal";
         if (!Enum.TryParse<ProcessPriorityClass>(priorityName, out var priority)) return;
 
+        var persist = PersistPriorityCheck.IsChecked == true;
         foreach (var entry in selected)
         {
-            if (entry.IsProtected) Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name));
-            else Log(ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority));
+            if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); continue; }
+
+            Log(ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority));
+
+            // Sync the persistent IFEO rule to the checkbox state: checked writes
+            // it, unchecked clears whatever rule (if any) was there before, so
+            // toggling the box off and re-applying is how you undo persistence.
+            if (persist) Log(PriorityPersistence.SetPersistent(entry.Name, priority));
+            else if (PriorityPersistence.IsPersisted(entry.Name)) Log(PriorityPersistence.ClearPersistent(entry.Name));
         }
         RefreshProcesses();
     }
@@ -308,7 +322,12 @@ public partial class MainWindow : Window
         if (selected.Count == 0) return;
 
         foreach (var entry in selected)
-            Log(_startupManager.SetEnabled(entry, true));
+        {
+            var wasEnabled = entry.Enabled;
+            var result = _startupManager.SetEnabled(entry, true);
+            Log(result);
+            if (result.Ok) _undoStack.Push(() => _startupManager.SetEnabled(entry, wasEnabled));
+        }
 
         RefreshStartup();
     }
@@ -323,10 +342,33 @@ public partial class MainWindow : Window
                 danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
             return;
 
+        if (AutoRestorePointCheck.IsChecked == true)
+            Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: before disabling startup items"));
+
         foreach (var entry in selected)
-            Log(_startupManager.SetEnabled(entry, false));
+        {
+            var wasEnabled = entry.Enabled;
+            var result = _startupManager.SetEnabled(entry, false);
+            Log(result);
+            if (result.Ok) _undoStack.Push(() => _startupManager.SetEnabled(entry, wasEnabled));
+        }
 
         RefreshStartup();
+    }
+
+    private void CreateRestorePoint_Click(object sender, RoutedEventArgs e) =>
+        Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: manual restore point"));
+
+    private void UndoLast_Click(object sender, RoutedEventArgs e)
+    {
+        if (_undoStack.Count == 0) { Log(Loc.Instance["Msg_UndoNone"]); return; }
+
+        var undo = _undoStack.Pop();
+        var result = undo();
+        Log(Loc.Instance.Format("Msg_UndoApplied", result.Message));
+
+        RefreshStartup();
+        RefreshServices();
     }
 
     // ---------- Services ----------
@@ -359,10 +401,18 @@ public partial class MainWindow : Window
             if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_ConfirmTitle"], message, items,
                     danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
                 return;
+
+            if (AutoRestorePointCheck.IsChecked == true)
+                Log(SystemRestoreService.CreateRestorePoint($"BgOptimizer: services set to {mode}"));
         }
 
         foreach (var entry in targets)
-            Log(_svcManager.SetStartMode(entry, mode));
+        {
+            var previousStartType = entry.StartType;
+            var result = _svcManager.SetStartMode(entry, mode);
+            Log(result);
+            if (result.Ok) _undoStack.Push(() => _svcManager.SetStartMode(entry, previousStartType));
+        }
 
         RefreshServices();
     }
@@ -389,8 +439,15 @@ public partial class MainWindow : Window
                 danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
             return;
 
+        if (AutoRestorePointCheck.IsChecked == true)
+            Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: before stopping services"));
+
         foreach (var entry in targets)
-            Log(_svcManager.Stop(entry));
+        {
+            var result = _svcManager.Stop(entry);
+            Log(result);
+            if (result.Ok) _undoStack.Push(() => _svcManager.Start(entry));
+        }
 
         RefreshServices();
     }
