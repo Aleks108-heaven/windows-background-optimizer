@@ -1,3 +1,6 @@
 bin/
 obj/
 publish/
+
+# Windows Explorer per-folder customization (local only, not app content)
+desktop.ini
