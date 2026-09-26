@@ -103,12 +103,40 @@ public class ProcessMonitor
         }
     }
 
+    [System.Runtime.InteropServices.DllImport("psapi.dll", SetLastError = true)]
+    private static extern bool EmptyWorkingSet(IntPtr hProcess);
+
+    /// <summary>
+    /// Trims the working set: pages go to the standby list and are reclaimed by Windows
+    /// only under pressure, so it is safe for any app (including browsers) and the app
+    /// simply faults pages back in if it needs them.
+    /// </summary>
+    public static ActionResult TrimMemory(int pid, string name)
+    {
+        if (ProtectedItems.IsProcessProtected(name))
+            return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            var before = proc.WorkingSet64;
+            if (!EmptyWorkingSet(proc.Handle))
+                return new ActionResult(false, "Msg_TrimFailed", name, "access denied");
+            proc.Refresh();
+            var freedMb = Math.Max(0, before - proc.WorkingSet64) / 1024.0 / 1024.0;
+            return new ActionResult(true, "Msg_Trimmed", name, pid, freedMb.ToString("F1"));
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult(false, "Msg_TrimFailed", name, ex.Message);
+        }
+    }
+
     public static ActionResult SetPriority(int pid, string name, ProcessPriorityClass priority)
     {
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
         if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsInteractive(name))
-            return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+            return new ActionResult(false, "Msg_ProcessInteractive", name);
         try
         {
             using var proc = Process.GetProcessById(pid);

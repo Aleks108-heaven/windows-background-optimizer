@@ -40,7 +40,7 @@ internal static class PriorityPersistence
 
         if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
             && ProtectedItems.IsInteractive(processName))
-            return new ActionResult(false, "Msg_ProcessProtectedModify", processName);
+            return new ActionResult(false, "Msg_ProcessInteractive", processName);
 
         if (!PriorityToCpuPriorityClass.TryGetValue(priority, out var value))
             return new ActionResult(false, "Msg_PriorityPersistFailed", processName, "unsupported priority class");

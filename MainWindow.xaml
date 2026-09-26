@@ -36,6 +36,9 @@
                         </ComboBox>
                         <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click"/>
                         <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRam]}" Click="FreeRamSelected_Click" Margin="10,0,0,0"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRamAll]}" Click="FreeRamAll_Click"/>
+                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_LaptopSaver]}" Click="LaptopSaver_Click"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,0"/>
                         <TextBox x:Name="ProcessSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="ProcessSearch_TextChanged"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ProcessesAutoRefresh]}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="{StaticResource TextFaintBrush}"/>
@@ -186,7 +189,24 @@
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Unblock]}" Click="SmbUnblock_Click"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Refresh]}" Click="RefreshSecurity_Click" Margin="12,0,0,0"/>
                     </StackPanel>
+
+                    <TextBlock Margin="0,16,0,0" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_AppFw]}" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_AppFwHint]}" Foreground="{StaticResource TextFaintBrush}" TextWrapping="Wrap"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_BlockApp]}" Click="AppBlock_Click"/>
+                        <ComboBox x:Name="BlockedAppsCombo" MinWidth="320" Margin="8,0,0,0"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RemoveRule]}" Click="AppUnblock_Click"/>
+                    </StackPanel>
                 </StackPanel>
+            </TabItem>
+            <!-- TWEAKS TAB -->
+            <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Tweaks]}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tw_Hint]}" Foreground="{StaticResource TextFaintBrush}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <StackPanel x:Name="TweakList"/>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
 

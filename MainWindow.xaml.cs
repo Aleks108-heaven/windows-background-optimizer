@@ -57,9 +57,10 @@ public partial class MainWindow : Window
         RefreshStartup();
         RefreshServices();
         RefreshSecurity();
+        BuildTweaks();
         UpdateSystemStats();
 
-        Loc.Instance.PropertyChanged += (_, _) => RefreshSecurity();
+        Loc.Instance.PropertyChanged += (_, _) => { RefreshSecurity(); BuildTweaks(); };
 
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += (_, _) =>
@@ -299,6 +300,63 @@ public partial class MainWindow : Window
         RefreshProcesses();
     }
 
+    private void FreeRamSelected_Click(object sender, RoutedEventArgs e) =>
+        TrimProcesses(ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList());
+
+    private void FreeRamAll_Click(object sender, RoutedEventArgs e) =>
+        TrimProcesses(_processes.Where(p => !p.IsProtected && p.MemoryBytes > 20L * 1024 * 1024).ToList());
+
+    private void TrimProcesses(List<ProcessEntry> entries)
+    {
+        int ok = 0;
+        double freed = 0;
+        foreach (var entry in entries)
+        {
+            if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); continue; }
+            var before = entry.MemoryBytes;
+            var result = ProcessMonitor.TrimMemory(entry.Pid, entry.Name);
+            if (result.Ok) { ok++; freed += double.Parse(result.Args[2].ToString()!, System.Globalization.CultureInfo.CurrentCulture); }
+            else if (entries.Count == 1) Log(result);
+        }
+        Log(Loc.Instance.Format("Msg_TrimSummary", ok, freed.ToString("F0")));
+        RefreshProcesses();
+    }
+
+    // Lowers priority + trims RAM for telemetry/vendor helper processes only. Core, dev tools,
+    // protected and interactive apps are never touched; nothing is killed or disabled.
+    private void LaptopSaver_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _processes
+            .Where(p => !p.IsProtected && !ProtectedItems.IsInteractive(p.Name)
+                && ItemClassifier.ClassifyStartup(p.Name, p.Name) is ItemCategory.Telemetry or ItemCategory.VendorDiag)
+            .ToList();
+        if (targets.Count == 0) { Log(Loc.Instance["Msg_SaverNone"]); return; }
+
+        var items = targets.Select(p => $"{p.Name}  —  PID {p.Pid}, {p.MemoryDisplay}, {p.Priority}").ToList();
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_SaverTitle"], Loc.Instance["Dlg_SaverMessage"], items,
+                danger: false, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+            return;
+
+        var previous = new List<(int Pid, string Name, ProcessPriorityClass Priority)>();
+        foreach (var t in targets)
+        {
+            if (!Enum.TryParse<ProcessPriorityClass>(t.Priority, out var old)) continue;
+            var r = ProcessMonitor.SetPriority(t.Pid, t.Name, ProcessPriorityClass.BelowNormal);
+            Log(r);
+            if (r.Ok) previous.Add((t.Pid, t.Name, old));
+        }
+        TrimProcesses(targets);
+
+        if (previous.Count > 0)
+            _undoStack.Push(() =>
+            {
+                int n = 0;
+                foreach (var (pid, name, prio) in previous)
+                    if (ProcessMonitor.SetPriority(pid, name, prio).Ok) n++;
+                return new ActionResult(true, "Msg_PriorityChanged", "laptop saver", n, "restored");
+            });
+    }
+
     private void ApplyPriority_Click(object sender, RoutedEventArgs e)
     {
         var selected = ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList();
@@ -399,14 +457,87 @@ public partial class MainWindow : Window
 
         SmbStatusText.Text = Loc.Instance.Format("Sec_SmbLine",
             Loc.Instance[_security.IsSmbBlocked() ? "Sec_Blocked" : "Sec_NotBlocked"]);
+
+        RefreshBlockedApps();
+    }
+
+    // ---------- Tweaks ----------
+
+    private readonly TweakManager _tweaks = new();
+
+    private void BuildTweaks()
+    {
+        TweakList.Children.Clear();
+        foreach (var tweak in TweakManager.Tweaks)
+        {
+            var text = new System.Windows.Controls.StackPanel();
+            text.Children.Add(new System.Windows.Controls.TextBlock { Text = Loc.Instance["Tw_" + tweak.Id], FontWeight = FontWeights.SemiBold });
+            text.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = Loc.Instance["Tw_" + tweak.Id + "_d"] + (tweak.NeedsAdmin ? "  " + Loc.Instance["Tw_Admin"] : ""),
+                Foreground = (System.Windows.Media.Brush)FindResource("TextFaintBrush"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            var box = new System.Windows.Controls.CheckBox
+            {
+                Content = text, Tag = tweak, IsChecked = _tweaks.IsApplied(tweak), Margin = new Thickness(0, 0, 0, 10),
+            };
+            box.Click += Tweak_Click;
+            TweakList.Children.Add(box);
+        }
+    }
+
+    private void Tweak_Click(object sender, RoutedEventArgs e)
+    {
+        var box = (System.Windows.Controls.CheckBox)sender;
+        var tweak = (TweakManager.Tweak)box.Tag;
+        var enable = box.IsChecked == true;
+
+        var msg = Loc.Instance["Tw_" + tweak.Id] + "\n\n" + Loc.Instance["Tw_" + tweak.Id + "_d"];
+        if (!ConfirmDialog.Show(this, Loc.Instance[enable ? "Dlg_TweakOn" : "Dlg_TweakOff"], msg, null,
+                danger: false, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+        {
+            box.IsChecked = !enable;
+            return;
+        }
+
+        var (result, snapshot) = _tweaks.Set(tweak, enable);
+        Log(result);
+        if (result.Ok) _undoStack.Push(() => { var r = _tweaks.Restore(snapshot); BuildTweaks(); return r; });
+        BuildTweaks();
+    }
+
+    private void RefreshBlockedApps()
+    {
+        BlockedAppsCombo.ItemsSource = _security.GetBlockedApps();
+        if (BlockedAppsCombo.Items.Count > 0) BlockedAppsCombo.SelectedIndex = 0;
+    }
+
+    private void AppBlock_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Programs (*.exe)|*.exe" };
+        if (dlg.ShowDialog(this) != true) return;
+        var path = dlg.FileName;
+        ApplySecurityChangeText(Loc.Instance.Format("Dlg_SecAppBlock", path),
+            () => _security.SetAppBlocked(path, true), () => _security.SetAppBlocked(path, false), danger: true);
+    }
+
+    private void AppUnblock_Click(object sender, RoutedEventArgs e)
+    {
+        if (BlockedAppsCombo.SelectedItem is not string path) return;
+        ApplySecurityChangeText(Loc.Instance.Format("Dlg_SecAppUnblock", path),
+            () => _security.SetAppBlocked(path, false), () => _security.SetAppBlocked(path, true), danger: false);
     }
 
     private void RefreshSecurity_Click(object sender, RoutedEventArgs e) => RefreshSecurity();
 
     // Confirms, applies, logs, and registers the inverse on the undo stack.
-    private void ApplySecurityChange(string confirmKey, Func<ActionResult> apply, Func<ActionResult> revert, bool danger)
+    private void ApplySecurityChange(string confirmKey, Func<ActionResult> apply, Func<ActionResult> revert, bool danger) =>
+        ApplySecurityChangeText(Loc.Instance[confirmKey], apply, revert, danger);
+
+    private void ApplySecurityChangeText(string confirmText, Func<ActionResult> apply, Func<ActionResult> revert, bool danger)
     {
-        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_SecTitle"], Loc.Instance[confirmKey], null,
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_SecTitle"], confirmText, null,
                 danger, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
             return;
 

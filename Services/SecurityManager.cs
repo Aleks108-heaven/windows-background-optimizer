@@ -75,6 +75,45 @@ public class SecurityManager
             : new ActionResult(false, "Msg_SecurityFailed", "SMB", $"netsh exit code {code}");
     }
 
+    private const string AppRulePrefix = "BgOptimizer Block Out: ";
+
+    /// <summary>Program paths that have a rule created by this app.</summary>
+    public List<string> GetBlockedApps()
+    {
+        var result = new List<string>();
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("netsh", "advfirewall firewall show rule name=all dir=out")
+            {
+                CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true,
+            })!;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(10000);
+            foreach (var line in output.Split('\n'))
+            {
+                var t = line.Trim();
+                var idx = t.IndexOf(':');
+                if (idx > 0 && t.StartsWith("Rule Name:", StringComparison.OrdinalIgnoreCase)
+                    && t[(idx + 1)..].Trim() is var n && n.StartsWith(AppRulePrefix))
+                    result.Add(n[AppRulePrefix.Length..]);
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    public ActionResult SetAppBlocked(string exePath, bool blocked)
+    {
+        var rule = AppRulePrefix + exePath;
+        var code = blocked
+            ? RunNetsh($"advfirewall firewall add rule name=\"{rule}\" dir=out action=block program=\"{exePath}\" enable=yes profile=any")
+            : RunNetsh($"advfirewall firewall delete rule name=\"{rule}\"");
+        var name = System.IO.Path.GetFileName(exePath);
+        return code == 0
+            ? new ActionResult(true, blocked ? "Msg_AppBlocked" : "Msg_AppUnblocked", name)
+            : new ActionResult(false, "Msg_SecurityFailed", name, $"netsh exit code {code}");
+    }
+
     /// <returns>(Domain, Private, Public) firewall-enabled flags; null if unreadable.</returns>
     public (bool? Domain, bool? Private, bool? Public) GetFirewallProfiles() =>
         (ReadProfile("DomainProfile"), ReadProfile("StandardProfile"), ReadProfile("PublicProfile"));
