@@ -38,6 +38,10 @@ internal static class PriorityPersistence
         if (ProtectedItems.IsProcessProtected(processName))
             return new ActionResult(false, "Msg_ProcessProtectedModify", processName);
 
+        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
+            && ProtectedItems.IsInteractive(processName))
+            return new ActionResult(false, "Msg_ProcessProtectedModify", processName);
+
         if (!PriorityToCpuPriorityClass.TryGetValue(priority, out var value))
             return new ActionResult(false, "Msg_PriorityPersistFailed", processName, "unsupported priority class");
 
@@ -68,6 +72,13 @@ internal static class PriorityPersistence
         {
             return new ActionResult(false, "Msg_PriorityPersistFailed", processName, ex.Message);
         }
+    }
+
+    /// <summary>Removes any leftover persistent low-priority rule on interactive apps (needs admin).</summary>
+    public static void ClearInteractiveRules()
+    {
+        foreach (var name in ProtectedItems.InteractiveProcessNames)
+            if (IsPersisted(name)) ClearPersistent(name);
     }
 
     public static bool IsPersisted(string processName)

@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<StartupEntry> _startupItems = new();
     private readonly ObservableCollection<ServiceEntry> _services = new();
 
+    private readonly Dictionary<string, ProcessPriorityClass> _enforcedPriorities = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _refreshTimer;
     private System.Windows.Forms.NotifyIcon? _trayIcon;
 
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        PriorityPersistence.ClearInteractiveRules();
         SetupTrayIcon();
 
         ProcessGrid.ItemsSource = _processes;
@@ -54,7 +56,10 @@ public partial class MainWindow : Window
         RefreshProcesses();
         RefreshStartup();
         RefreshServices();
+        RefreshSecurity();
         UpdateSystemStats();
+
+        Loc.Instance.PropertyChanged += (_, _) => RefreshSecurity();
 
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += (_, _) =>
@@ -228,6 +233,18 @@ public partial class MainWindow : Window
     private void RefreshProcesses()
     {
         var fresh = _processMonitor.Refresh();
+
+        // Windows respawns helpers like SearchFilterHost under new PIDs at Normal priority,
+        // so a one-shot priority change is lost. Re-apply it to every new instance by name.
+        if (_enforcedPriorities.Count > 0)
+        {
+            foreach (var p in fresh)
+            {
+                if (!p.IsProtected && _enforcedPriorities.TryGetValue(p.Name, out var wanted)
+                    && p.Priority != wanted.ToString())
+                    ProcessMonitor.SetPriority(p.Pid, p.Name, wanted);
+            }
+        }
         var freshPids = new HashSet<int>(fresh.Count);
         foreach (var p in fresh) freshPids.Add(p.Pid);
 
@@ -300,8 +317,16 @@ public partial class MainWindow : Window
             // Sync the persistent IFEO rule to the checkbox state: checked writes
             // it, unchecked clears whatever rule (if any) was there before, so
             // toggling the box off and re-applying is how you undo persistence.
-            if (persist) Log(PriorityPersistence.SetPersistent(entry.Name, priority));
-            else if (PriorityPersistence.IsPersisted(entry.Name)) Log(PriorityPersistence.ClearPersistent(entry.Name));
+            if (persist)
+            {
+                _enforcedPriorities[entry.Name] = priority;
+                Log(PriorityPersistence.SetPersistent(entry.Name, priority));
+            }
+            else
+            {
+                _enforcedPriorities.Remove(entry.Name);
+                if (PriorityPersistence.IsPersisted(entry.Name)) Log(PriorityPersistence.ClearPersistent(entry.Name));
+            }
         }
         RefreshProcesses();
     }
@@ -359,6 +384,50 @@ public partial class MainWindow : Window
     private void CreateRestorePoint_Click(object sender, RoutedEventArgs e) =>
         Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: manual restore point"));
 
+    // ---------- Security ----------
+
+    private readonly SecurityManager _security = new();
+
+    private void RefreshSecurity()
+    {
+        string Fw(bool? on) => Loc.Instance[on switch { true => "Sec_On", false => "Sec_Off", null => "Sec_Unknown" }];
+        var (domain, priv, pub) = _security.GetFirewallProfiles();
+        FirewallStatusText.Text = Loc.Instance.Format("Sec_FwLine", Fw(domain), Fw(priv), Fw(pub));
+
+        var winRm = _security.GetWinRm();
+        WinRmStatusText.Text = Loc.Instance.Format("Sec_WinRmLine", winRm.Status, winRm.StartMode);
+
+        SmbStatusText.Text = Loc.Instance.Format("Sec_SmbLine",
+            Loc.Instance[_security.IsSmbBlocked() ? "Sec_Blocked" : "Sec_NotBlocked"]);
+    }
+
+    private void RefreshSecurity_Click(object sender, RoutedEventArgs e) => RefreshSecurity();
+
+    // Confirms, applies, logs, and registers the inverse on the undo stack.
+    private void ApplySecurityChange(string confirmKey, Func<ActionResult> apply, Func<ActionResult> revert, bool danger)
+    {
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_SecTitle"], Loc.Instance[confirmKey], null,
+                danger, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+            return;
+
+        var result = apply();
+        Log(result);
+        if (result.Ok) _undoStack.Push(revert);
+        RefreshSecurity();
+    }
+
+    private void WinRmDisable_Click(object sender, RoutedEventArgs e) =>
+        ApplySecurityChange("Dlg_SecWinRmOff", () => _security.SetWinRm(false), () => _security.SetWinRm(true), danger: true);
+
+    private void WinRmEnable_Click(object sender, RoutedEventArgs e) =>
+        ApplySecurityChange("Dlg_SecWinRmOn", () => _security.SetWinRm(true), () => _security.SetWinRm(false), danger: false);
+
+    private void SmbBlock_Click(object sender, RoutedEventArgs e) =>
+        ApplySecurityChange("Dlg_SecSmbBlock", () => _security.SetSmbBlocked(true), () => _security.SetSmbBlocked(false), danger: true);
+
+    private void SmbUnblock_Click(object sender, RoutedEventArgs e) =>
+        ApplySecurityChange("Dlg_SecSmbUnblock", () => _security.SetSmbBlocked(false), () => _security.SetSmbBlocked(true), danger: false);
+
     private void UndoLast_Click(object sender, RoutedEventArgs e)
     {
         if (_undoStack.Count == 0) { Log(Loc.Instance["Msg_UndoNone"]); return; }
@@ -369,6 +438,7 @@ public partial class MainWindow : Window
 
         RefreshStartup();
         RefreshServices();
+        RefreshSecurity();
     }
 
     // ---------- Services ----------

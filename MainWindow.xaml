@@ -163,6 +163,31 @@
                     </DataGrid>
                 </DockPanel>
             </TabItem>
+
+            <!-- SECURITY TAB -->
+            <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Security]}">
+                <StackPanel Margin="12">
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_Firewall]}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="FirewallStatusText" Margin="0,4,0,16" Foreground="{StaticResource TextDimBrush}"/>
+
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_WinRm]}" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_WinRmHint]}" Foreground="{StaticResource TextFaintBrush}"/>
+                    <TextBlock x:Name="WinRmStatusText" Margin="0,4,0,0" Foreground="{StaticResource TextDimBrush}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,16">
+                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Disable]}" Click="WinRmDisable_Click"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Enable]}" Click="WinRmEnable_Click"/>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_Smb]}" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_SmbHint]}" Foreground="{StaticResource TextFaintBrush}"/>
+                    <TextBlock x:Name="SmbStatusText" Margin="0,4,0,0" Foreground="{StaticResource TextDimBrush}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Block]}" Click="SmbBlock_Click"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Unblock]}" Click="SmbUnblock_Click"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Refresh]}" Click="RefreshSecurity_Click" Margin="12,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </TabItem>
         </TabControl>
 
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="6" Margin="0,10,0,0">

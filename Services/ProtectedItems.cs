@@ -17,6 +17,20 @@ internal static class ProtectedItems
         "MsMpEng", "NisSrv", "SecurityHealthService", "MpDefenderCoreService",
     };
 
+    // Foreground/UI processes: lowering their priority (esp. persistently, which hits every
+    // instance of the exe) makes browsers, Start, and shell surfaces stutter or freeze.
+    public static readonly HashSet<string> InteractiveProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "msedge", "chrome", "firefox", "brave", "opera", "msedgewebview2",
+        "ApplicationFrameHost", "SearchHost", "ShellExperienceHost",
+        "StartMenuExperienceHost", "ShellHost", "LockApp", "Taskmgr",
+        "BgOptimizer", "AsusOSD", "AsusHotkey", "Code", "devenv",
+    };
+
+    public static bool IsInteractive(string processName) =>
+        InteractiveProcessNames.Contains(processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? processName[..^4] : processName);
+
     public static readonly HashSet<string> ProtectedServiceNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "RpcSs", "RpcEptMapper", "DcomLaunch", "LSM", "Winmgmt", "EventLog",

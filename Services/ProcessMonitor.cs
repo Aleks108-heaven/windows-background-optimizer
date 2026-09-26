@@ -107,6 +107,8 @@ public class ProcessMonitor
     {
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsInteractive(name))
+            return new ActionResult(false, "Msg_ProcessProtectedModify", name);
         try
         {
             using var proc = Process.GetProcessById(pid);
