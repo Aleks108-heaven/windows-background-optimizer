@@ -5,6 +5,7 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 ## Features
 
 ### Processes tab
+
 - Live list of all running processes with CPU % and memory usage, auto-refreshing every 2 seconds.
 - **Kill Selected** — force-terminates the selected process (with a confirmation prompt).
 - **Apply Priority** — sets a process's CPU scheduling priority (Idle, BelowNormal, Normal, AboveNormal, High) without killing it. `Idle` is the safest way to throttle something you don't want competing for CPU while keeping it running.
@@ -15,11 +16,13 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 - **Laptop saver…** — for running processes classified as Telemetry or Vendor/Diagnostics (never Core, dev tools, protected or interactive apps), shows a confirmation list, then sets them to BelowNormal and trims their RAM. Nothing is killed or disabled, and **Undo** restores the original priorities.
 
 ### Startup Apps tab
+
 - Lists every startup entry from the registry Run keys (current user and all users), both Startup folders (yours and all-users), and Scheduled Tasks — the mechanism most OEM bundleware (ASUS, Dell, HP, ...) actually uses to relaunch its background agents, which Run keys and the Startup folder never see. Tasks under `\Microsoft\...` are excluded on purpose (that's ~300+ Windows-internal plumbing tasks on a typical machine; surfacing those would bury the handful of OEM/third-party ones you actually came here to manage).
 - **Enable Selected** / **Disable Selected** — toggles whether an item launches at login. Uses the same mechanism Task Manager uses for Run-key/Startup-folder entries (a `StartupApproved` registry flag, or renaming shortcuts with a `.disabled` suffix) and `schtasks.exe` for Scheduled Tasks, so it's fully reversible and doesn't delete anything.
 - **Category** column — a best-effort hint (Telemetry / Core / Developer Tool / Vendor-Diagnostics / Uncategorized) based on name patterns, to help you decide what's safe to touch. It's a suggestion, not a verdict — the app never selects or acts on items based on it, and the same task can be safe for one person and load-bearing for another.
 
 ### Services tab
+
 - Lists all Windows services with their current status, startup type, and the same best-effort **Category** hint as Startup Apps.
 - **Set: Automatic / Manual / Disabled** — changes a service's startup type.
   - *Automatic*: starts at every boot.
@@ -28,19 +31,24 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 - **Stop Now** — stops a running service immediately.
 
 ### Security tab
+
 - Read-only view of the Windows Firewall profiles, plus WinRM on/off and an inbound SMB (139/445) block rule.
 - **Application firewall (outbound)** — **Block app…** picks an `.exe` (e.g. `msedge.exe`, `java.exe`, a developer tool) and adds a Windows Firewall rule blocking its outbound traffic; a dropdown lists only rules this app created, and **Remove rule** deletes the selected one. Core Windows processes on the protected list are refused, the path must be an existing `.exe`, and changes are undoable.
 
 ### Tweaks tab
+
 A curated set of reversible registry tweaks, each behind a confirmation: minimum diagnostic data (HKLM policy, needs admin), advertising ID and tailored experiences, suggested apps/Start ads/lock-screen tips, background Store apps, web results in Start search, Game DVR, and the startup delay. Unticking a tweak restores the Windows default (deleting the value where Windows has none); **Undo** restores your exact previous value. Nothing here touches Defender, SmartScreen, UAC, Windows Update or the firewall. Some changes need a sign-out/sign-in (web search may need Explorer restarted). Widgets is deliberately not included: Windows 11 blocks other programs from writing that setting.
 
 ### Activity Log
+
 A running log at the bottom of the window records every action taken (or blocked), with a timestamp.
 
 ### Multi-language UI
+
 Switch languages live from the dropdown in the top-right — no restart needed. Supported: English, Ukrainian, Spanish, German, Italian, Polish, Russian. Every label, button, column header, dialog, and log message is translated.
 
 ### System tray
+
 Minimizing the window sends it to the system tray (look for the blue "B" icon — Windows may tuck new tray icons behind the `^` "show hidden icons" arrow near the clock the first time). Double-click the tray icon, or right-click → **Open**, to restore it. Right-click → **Exit** fully quits the app.
 
 ## Safety
@@ -57,12 +65,14 @@ The protected list can't know about every third-party or OEM (e.g. laptop vendor
 ## Requirements
 
 **To just run a pre-built copy** (no dev tools needed):
+
 - Windows 10 (64-bit, version 1809 or later) or Windows 11
 - Administrator rights — the app self-elevates via UAC on every launch, so you'll get a UAC prompt each time
 - No .NET runtime needs to be installed separately — see **Installing a pre-built copy** below
 - Hardware requirements are trivial: the app itself typically uses well under 1% CPU at idle and roughly 100–300 MB RAM. Any 64-bit Windows 10/11 laptop from the last decade or so is more than enough — an Intel Core i5 with 16 GB RAM is comfortably above what's needed.
 
 **To build from source:**
+
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - Windows (WPF only builds/runs on Windows)
 
@@ -121,6 +131,7 @@ Services/
 Localization/
   Loc.cs                    Translation tables + live language-switching
   ActionResult.cs           Localized result type returned by service actions
+scripts/                    Optional standalone hardening scripts (WinRM, inbound SMB); see scripts/README.md
 installer/
   Install-Shortcut.ps1      Copies a published build + creates Start Menu/Desktop shortcuts
 icon.ico                    App icon (exe, window title bar, and tray all share this)

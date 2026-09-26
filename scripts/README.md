@@ -8,7 +8,7 @@ powershell -ExecutionPolicy Bypass -File .\disable-winrm.ps1
 ```
 
 | Script | What it does |
-|---|---|
+| --- | --- |
 | `disable-winrm.ps1` | Turns off PowerShell Remoting and stops WinRM (ports 5985 and 47001). |
 | `enable-winrm.ps1` | Undoes the WinRM change. |
 | `block-smb-inbound.ps1` | Adds a firewall rule that blocks other machines from connecting to ports 139 and 445. Your own access to a NAS or shared folders keeps working. |
