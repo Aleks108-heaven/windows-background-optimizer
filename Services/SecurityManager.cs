@@ -104,11 +104,20 @@ public class SecurityManager
 
     public ActionResult SetAppBlocked(string exePath, bool blocked)
     {
+        var name = System.IO.Path.GetFileName(exePath);
+        if (blocked)
+        {
+            if (!exePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(exePath) || exePath.Contains('"'))
+                return new ActionResult(false, "Msg_SecurityFailed", name, "not a valid .exe path");
+            // Blocking core Windows processes (svchost, lsass, ...) would cut off networking.
+            if (ProtectedItems.IsProcessProtected(System.IO.Path.GetFileNameWithoutExtension(exePath)))
+                return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        }
+
         var rule = AppRulePrefix + exePath;
         var code = blocked
             ? RunNetsh($"advfirewall firewall add rule name=\"{rule}\" dir=out action=block program=\"{exePath}\" enable=yes profile=any")
             : RunNetsh($"advfirewall firewall delete rule name=\"{rule}\"");
-        var name = System.IO.Path.GetFileName(exePath);
         return code == 0
             ? new ActionResult(true, blocked ? "Msg_AppBlocked" : "Msg_AppUnblocked", name)
             : new ActionResult(false, "Msg_SecurityFailed", name, $"netsh exit code {code}");

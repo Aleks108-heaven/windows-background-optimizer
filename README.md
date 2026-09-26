@@ -10,6 +10,9 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 - **Apply Priority** — sets a process's CPU scheduling priority (Idle, BelowNormal, Normal, AboveNormal, High) without killing it. `Idle` is the safest way to throttle something you don't want competing for CPU while keeping it running.
 - **Persist across restarts** — a checkbox next to Apply Priority. Checked, it writes the chosen priority to the registry under Image File Execution Options (the same mechanism Task Manager's own "Efficiency Mode" uses), so Windows re-applies it every time that exe launches, not just until the next reboot. Unchecked, applying just changes the live process as before, and clears any persistent rule that exe previously had. Two things worth knowing: it matches by the exe's bare filename, so it affects every instance of that exe system-wide, not just the one selected in the grid; and this registry area is also how debuggers attach to a process at launch, so some security software watches writes to it.
 - Protected processes are flagged and cannot be killed or reprioritized (see **Safety** below).
+- **Interactive apps** (browsers, Start/Search/shell hosts, Task Manager, VS Code, ...) can't be set to Idle or BelowNormal, live or persistently, because that makes them lag or freeze. Raising them to Normal or higher is allowed. The log explains this with its own message instead of calling them system processes.
+- **Free RAM (selected / all)** — trims the working set of processes (`EmptyWorkingSet`). Nothing is killed and priorities don't change; Windows reclaims the pages only under memory pressure and the app faults back in whatever it uses, so it is safe for browsers too. "All" skips protected processes and anything under 20 MB. The freed memory tends to creep back, so treat it as a one-time cleanup.
+- **Laptop saver…** — for running processes classified as Telemetry or Vendor/Diagnostics (never Core, dev tools, protected or interactive apps), shows a confirmation list, then sets them to BelowNormal and trims their RAM. Nothing is killed or disabled, and **Undo** restores the original priorities.
 
 ### Startup Apps tab
 - Lists every startup entry from the registry Run keys (current user and all users), both Startup folders (yours and all-users), and Scheduled Tasks — the mechanism most OEM bundleware (ASUS, Dell, HP, ...) actually uses to relaunch its background agents, which Run keys and the Startup folder never see. Tasks under `\Microsoft\...` are excluded on purpose (that's ~300+ Windows-internal plumbing tasks on a typical machine; surfacing those would bury the handful of OEM/third-party ones you actually came here to manage).
@@ -23,6 +26,13 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
   - *Manual*: only starts when something actually needs it — the safest way to reduce background load without losing the feature.
   - *Disabled*: never starts, even if something depends on it. This is the one destructive option, which is why it prompts for confirmation.
 - **Stop Now** — stops a running service immediately.
+
+### Security tab
+- Read-only view of the Windows Firewall profiles, plus WinRM on/off and an inbound SMB (139/445) block rule.
+- **Application firewall (outbound)** — **Block app…** picks an `.exe` (e.g. `msedge.exe`, `java.exe`, a developer tool) and adds a Windows Firewall rule blocking its outbound traffic; a dropdown lists only rules this app created, and **Remove rule** deletes the selected one. Core Windows processes on the protected list are refused, the path must be an existing `.exe`, and changes are undoable.
+
+### Tweaks tab
+A curated set of reversible registry tweaks, each behind a confirmation: minimum diagnostic data (HKLM policy, needs admin), advertising ID and tailored experiences, suggested apps/Start ads/lock-screen tips, background Store apps, web results in Start search, Game DVR, and the startup delay. Unticking a tweak restores the Windows default (deleting the value where Windows has none); **Undo** restores your exact previous value. Nothing here touches Defender, SmartScreen, UAC, Windows Update or the firewall. Some changes need a sign-out/sign-in (web search may need Explorer restarted). Widgets is deliberately not included: Windows 11 blocks other programs from writing that setting.
 
 ### Activity Log
 A running log at the bottom of the window records every action taken (or blocked), with a timestamp.
@@ -40,7 +50,7 @@ This app runs elevated (admin) because managing services and killing other proce
 1. **Protected list** ([Services/ProtectedItems.cs](Services/ProtectedItems.cs)) — hard-blocks changes to ~40 core Windows processes and services (`csrss`, `lsass`, `svchost`, `explorer`, `RpcSs`, `WinDefend`, `TrustedInstaller`, Windows Defender's engine and related services, etc.). These show as "Protected" in the grids and every action against them is refused, not just warned.
 2. **Confirmation dialogs** — killing a process, disabling a startup item, disabling a service, or stopping a service all prompt for confirmation before acting.
 3. **Restore Point safety net** — the "Auto restore point before risky changes" checkbox (Startup Apps tab, on by default) creates a System Restore point via the `SystemRestore` WMI class before Disable Startup, Set: Disabled, or Stop Now runs. There's also a manual **Create Restore Point** button for creating one on demand. This is best-effort: if System Restore is off for the system drive, or Windows' own once-per-24-hours throttle kicks in, the app logs it and proceeds anyway rather than blocking your actual request.
-4. **Undo Last Change** — reverts the most recent reversible action (startup enable/disable, service start-type change, or service stop) from a session-only LIFO stack. It isn't persisted across app restarts — closing the app and reopening Startup Apps/Services to set something back by hand is equivalent.
+4. **Undo Last Change** — reverts the most recent reversible action (startup enable/disable, service start-type change, service stop, firewall rule, registry tweak, or Laptop saver) from a session-only LIFO stack. It isn't persisted across app restarts — closing the app and reopening Startup Apps/Services to set something back by hand is equivalent.
 
 The protected list can't know about every third-party or OEM (e.g. laptop vendor) service, so exercise the same judgment yourself there — prefer **Manual** over **Disabled** for anything you're not 100% sure about, change one thing at a time, and lean on the Category hint and Restore Point button above for anything you're unsure about.
 
@@ -105,6 +115,8 @@ Services/
   ProtectedItems.cs         The safety deny-lists
   ItemClassifier.cs         Best-effort Category labeling for Startup Apps/Services
   PriorityPersistence.cs    Persistent process priority via Image File Execution Options
+  SecurityManager.cs        WinRM, SMB block, per-app outbound firewall rules (netsh)
+  TweakManager.cs           Curated reversible registry tweaks with exact-value undo
   SystemRestoreService.cs   System Restore point creation (via the SystemRestore WMI class)
 Localization/
   Loc.cs                    Translation tables + live language-switching
