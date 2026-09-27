@@ -20,22 +20,30 @@ public class BatteryManager
     {
         int? design = ReadWmiUInt(@"root\wmi", "BatteryStaticData", "DesignedCapacity");
         int? full = ReadWmiUInt(@"root\wmi", "BatteryFullChargedCapacity", "FullChargedCapacity");
-        int? percent = ReadWmiUInt("root\\cimv2", "Win32_Battery", "EstimatedChargeRemaining");
 
         bool? charging = null;
         int? rate = null;
+        int? remaining = null;
         try
         {
-            using var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT Charging, ChargeRate, DischargeRate FROM BatteryStatus");
+            using var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT Charging, ChargeRate, DischargeRate, RemainingCapacity FROM BatteryStatus");
             var o = searcher.Get().Cast<ManagementObject>().FirstOrDefault();
             if (o != null)
             {
                 charging = o["Charging"] as bool?;
                 rate = charging == true ? o["ChargeRate"] as uint? is uint c ? (int)c : null
                                          : o["DischargeRate"] as uint? is uint d ? (int)d : null;
+                remaining = o["RemainingCapacity"] as uint? is uint r ? (int)r : null;
             }
         }
         catch { }
+
+        // RemainingCapacity/FullChargedCapacity matches what Windows itself shows in the
+        // taskbar; Win32_Battery.EstimatedChargeRemaining is a separate, coarser value that
+        // can lag noticeably behind, so it's only a fallback if the precise reading fails.
+        int? percent = remaining is int rem && full is int f && f > 0
+            ? (int)Math.Round(rem * 100.0 / f, MidpointRounding.AwayFromZero)
+            : ReadWmiUInt("root\\cimv2", "Win32_Battery", "EstimatedChargeRemaining");
 
         return new BatteryHealth(design, full, percent, charging, rate);
     }

@@ -131,11 +131,12 @@ public class ProcessMonitor
         }
     }
 
-    public static ActionResult SetPriority(int pid, string name, ProcessPriorityClass priority)
+    public static ActionResult SetPriority(int pid, string name, ProcessPriorityClass priority, bool allowInteractiveThrottle = false)
     {
+        // Security/system-critical processes are never throttleable, regardless of the caller's intent.
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
-        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsInteractive(name))
+        if (!allowInteractiveThrottle && priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsInteractive(name))
             return new ActionResult(false, "Msg_ProcessInteractive", name);
         try
         {

@@ -5,6 +5,7 @@
         Title="{Binding Source={x:Static loc:Loc.Instance}, Path=[AppTitle]}"
         Icon="icon.ico"
         Height="720" Width="1100"
+        MinHeight="480" MinWidth="640"
         Background="{StaticResource BgBrush}">
 
     <Grid Margin="10">
@@ -23,26 +24,28 @@
             <!-- PROCESSES TAB -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Processes]}">
                 <DockPanel Margin="8">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RefreshNow]}" Click="RefreshProcesses_Click"/>
-                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_KillSelected]}" Click="KillProcess_Click"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                        <ComboBox x:Name="PriorityCombo" Width="120" SelectedIndex="0">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RefreshNow]}" Click="RefreshProcesses_Click" Margin="0,0,0,4"/>
+                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_KillSelected]}" Click="KillProcess_Click" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" VerticalAlignment="Center" Margin="12,0,4,4"/>
+                        <ComboBox x:Name="PriorityCombo" Width="120" SelectedIndex="0" Margin="0,0,0,4">
                             <ComboBoxItem Content="Idle"/>
                             <ComboBoxItem Content="BelowNormal"/>
                             <ComboBoxItem Content="Normal"/>
                             <ComboBoxItem Content="AboveNormal"/>
                             <ComboBoxItem Content="High"/>
                         </ComboBox>
-                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click"/>
-                        <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRam]}" Click="FreeRamSelected_Click" Margin="10,0,0,0"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRamAll]}" Click="FreeRamAll_Click"/>
-                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_LaptopSaver]}" Click="LaptopSaver_Click"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,0"/>
-                        <TextBox x:Name="ProcessSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="ProcessSearch_TextChanged"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ProcessesAutoRefresh]}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="{StaticResource TextFaintBrush}"/>
-                    </StackPanel>
+                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click" Margin="0,0,0,4"/>
+                        <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,4"/>
+                        <CheckBox x:Name="AllowInteractiveThrottleCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottle]}" VerticalAlignment="Center" Margin="10,0,0,4"
+                                  ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottleHint]}"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRam]}" Click="FreeRamSelected_Click" Margin="10,0,0,4"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRamAll]}" Click="FreeRamAll_Click" Margin="0,0,0,4"/>
+                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_LaptopSaver]}" Click="LaptopSaver_Click" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,4"/>
+                        <TextBox x:Name="ProcessSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="ProcessSearch_TextChanged" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ProcessesAutoRefresh]}" VerticalAlignment="Center" Margin="16,0,0,4" Foreground="{StaticResource TextFaintBrush}"/>
+                    </WrapPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,8,0,4">
                         <Border Width="220" Height="64" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
                             <Grid>

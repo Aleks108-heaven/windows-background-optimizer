@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         {
             RefreshProcesses();
             UpdateSystemStats();
+            RefreshBattery(); // cheap WMI reads only; the rest of RefreshSecurity() spawns netsh and stays on-demand
         };
         _refreshTimer.Start();
     }
@@ -243,7 +244,9 @@ public partial class MainWindow : Window
             {
                 if (!p.IsProtected && _enforcedPriorities.TryGetValue(p.Name, out var wanted)
                     && p.Priority != wanted.ToString())
-                    ProcessMonitor.SetPriority(p.Pid, p.Name, wanted);
+                    // allowInteractiveThrottle: true - persisting this rule already required the
+                    // user to explicitly opt in via the checkbox at the time it was applied.
+                    ProcessMonitor.SetPriority(p.Pid, p.Name, wanted, allowInteractiveThrottle: true);
             }
         }
         var freshPids = new HashSet<int>(fresh.Count);
@@ -366,11 +369,12 @@ public partial class MainWindow : Window
         if (!Enum.TryParse<ProcessPriorityClass>(priorityName, out var priority)) return;
 
         var persist = PersistPriorityCheck.IsChecked == true;
+        var allowInteractive = AllowInteractiveThrottleCheck.IsChecked == true;
         foreach (var entry in selected)
         {
             if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); continue; }
 
-            Log(ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority));
+            Log(ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority, allowInteractive));
 
             // Sync the persistent IFEO rule to the checkbox state: checked writes
             // it, unchecked clears whatever rule (if any) was there before, so
@@ -461,29 +465,34 @@ public partial class MainWindow : Window
 
         RefreshBlockedApps();
         RefreshBattery();
+        RefreshHibernateStatus();
     }
 
+    // Cheap WMI reads only (no process spawn) - safe to call every 2s so charge % doesn't go stale.
     private void RefreshBattery()
     {
         var h = _battery.GetHealth();
         if (h.Percent is null)
         {
             BatteryHealthText.Text = Loc.Instance["Sec_BatteryUnavailable"];
-        }
-        else
-        {
-            var state = h.Charging switch { true => "Sec_Charging", false => "Sec_Discharging", null => "Sec_Idle" };
-            var rateText = h.RateMw is int mw
-                ? Loc.Instance.Format("Sec_BatteryRate", (mw / 1000.0).ToString("F1"), Loc.Instance[state])
-                : Loc.Instance[state];
-
-            BatteryHealthText.Text = h.DesignMWh is int design && h.FullChargeMWh is int full && design > 0
-                ? Loc.Instance.Format("Sec_BatteryLine", full, design, full * 100 / design, h.Percent, rateText)
-                : h.FullChargeMWh is int fullOnly
-                    ? Loc.Instance.Format("Sec_BatteryLineNoDesign", fullOnly, h.Percent, rateText)
-                    : Loc.Instance["Sec_BatteryUnavailable"];
+            return;
         }
 
+        var state = h.Charging switch { true => "Sec_Charging", false => "Sec_Discharging", null => "Sec_Idle" };
+        var rateText = h.RateMw is int mw
+            ? Loc.Instance.Format("Sec_BatteryRate", (mw / 1000.0).ToString("F1"), Loc.Instance[state])
+            : Loc.Instance[state];
+
+        BatteryHealthText.Text = h.DesignMWh is int design && h.FullChargeMWh is int full && design > 0
+            ? Loc.Instance.Format("Sec_BatteryLine", full, design, full * 100 / design, h.Percent, rateText)
+            : h.FullChargeMWh is int fullOnly
+                ? Loc.Instance.Format("Sec_BatteryLineNoDesign", fullOnly, h.Percent, rateText)
+                : Loc.Instance["Sec_BatteryUnavailable"];
+    }
+
+    // Spawns powercfg, so this stays on-demand (tab load, Refresh button, after toggling) rather than on the 2s timer.
+    private void RefreshHibernateStatus()
+    {
         var hib = _battery.IsHibernateOnLidClose();
         HibernateStatusText.Text = Loc.Instance.Format("Sec_HibernateLine",
             Loc.Instance[hib switch { true => "Sec_HibernateOn", false => "Sec_HibernateOff", null => "Sec_HibernateUnknown" }]);
