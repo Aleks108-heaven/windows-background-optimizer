@@ -197,6 +197,16 @@
                         <ComboBox x:Name="BlockedAppsCombo" MinWidth="320" Margin="8,0,0,0"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RemoveRule]}" Click="AppUnblock_Click"/>
                     </StackPanel>
+
+                    <TextBlock Margin="0,16,0,0" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_Battery]}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="BatteryHealthText" Margin="0,4,0,12" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+
+                    <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_HibernateHint]}" Foreground="{StaticResource TextFaintBrush}" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="HibernateStatusText" Margin="0,4,0,0" Foreground="{StaticResource TextDimBrush}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Enable]}" Click="HibernateOnLidEnable_Click"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Disable]}" Click="HibernateOnLidDisable_Click"/>
+                    </StackPanel>
                 </StackPanel>
             </TabItem>
             <!-- TWEAKS TAB -->

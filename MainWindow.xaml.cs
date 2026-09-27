@@ -445,6 +445,7 @@ public partial class MainWindow : Window
     // ---------- Security ----------
 
     private readonly SecurityManager _security = new();
+    private readonly BatteryManager _battery = new();
 
     private void RefreshSecurity()
     {
@@ -459,6 +460,33 @@ public partial class MainWindow : Window
             Loc.Instance[_security.IsSmbBlocked() ? "Sec_Blocked" : "Sec_NotBlocked"]);
 
         RefreshBlockedApps();
+        RefreshBattery();
+    }
+
+    private void RefreshBattery()
+    {
+        var h = _battery.GetHealth();
+        if (h.Percent is null)
+        {
+            BatteryHealthText.Text = Loc.Instance["Sec_BatteryUnavailable"];
+        }
+        else
+        {
+            var state = h.Charging switch { true => "Sec_Charging", false => "Sec_Discharging", null => "Sec_Idle" };
+            var rateText = h.RateMw is int mw
+                ? Loc.Instance.Format("Sec_BatteryRate", (mw / 1000.0).ToString("F1"), Loc.Instance[state])
+                : Loc.Instance[state];
+
+            BatteryHealthText.Text = h.DesignMWh is int design && h.FullChargeMWh is int full && design > 0
+                ? Loc.Instance.Format("Sec_BatteryLine", full, design, full * 100 / design, h.Percent, rateText)
+                : h.FullChargeMWh is int fullOnly
+                    ? Loc.Instance.Format("Sec_BatteryLineNoDesign", fullOnly, h.Percent, rateText)
+                    : Loc.Instance["Sec_BatteryUnavailable"];
+        }
+
+        var hib = _battery.IsHibernateOnLidClose();
+        HibernateStatusText.Text = Loc.Instance.Format("Sec_HibernateLine",
+            Loc.Instance[hib switch { true => "Sec_HibernateOn", false => "Sec_HibernateOff", null => "Sec_HibernateUnknown" }]);
     }
 
     // ---------- Tweaks ----------
@@ -529,6 +557,12 @@ public partial class MainWindow : Window
             () => _security.SetAppBlocked(path, false), () => _security.SetAppBlocked(path, true), danger: false);
     }
 
+    private void HibernateOnLidEnable_Click(object sender, RoutedEventArgs e) =>
+        ApplySecurityChange("Dlg_SecHibernateOn", () => _battery.SetHibernateOnLidClose(true), () => _battery.SetHibernateOnLidClose(false), danger: false);
+
+    private void HibernateOnLidDisable_Click(object sender, RoutedEventArgs e) =>
+        ApplySecurityChange("Dlg_SecHibernateOff", () => _battery.SetHibernateOnLidClose(false), () => _battery.SetHibernateOnLidClose(true), danger: false);
+
     private void RefreshSecurity_Click(object sender, RoutedEventArgs e) => RefreshSecurity();
 
     // Confirms, applies, logs, and registers the inverse on the undo stack.
@@ -544,6 +578,7 @@ public partial class MainWindow : Window
         var result = apply();
         Log(result);
         if (result.Ok) _undoStack.Push(revert);
+        else _trayIcon?.ShowBalloonTip(4000, Loc.Instance["Dlg_SecTitle"], result.Message, System.Windows.Forms.ToolTipIcon.Error);
         RefreshSecurity();
     }
 

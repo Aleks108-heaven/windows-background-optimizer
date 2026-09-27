@@ -1,0 +1,107 @@
+using System.Diagnostics;
+using System.Linq;
+using System.Management;
+using System.Text.RegularExpressions;
+using BgOptimizer.Localization;
+
+namespace BgOptimizer.Services;
+
+/// <summary>
+/// Read-only battery wear info (design vs full-charge capacity, live drain) plus an optional
+/// "hibernate instead of sleep on lid close while on battery" toggle. Hibernate/S3 support
+/// varies a lot on Modern-Standby-only laptops, so the toggle re-reads the setting after
+/// writing it and reports failure instead of claiming success when the hardware ignores it.
+/// </summary>
+public class BatteryManager
+{
+    public record BatteryHealth(int? DesignMWh, int? FullChargeMWh, int? Percent, bool? Charging, int? RateMw);
+
+    public BatteryHealth GetHealth()
+    {
+        int? design = ReadWmiUInt(@"root\wmi", "BatteryStaticData", "DesignedCapacity");
+        int? full = ReadWmiUInt(@"root\wmi", "BatteryFullChargedCapacity", "FullChargedCapacity");
+        int? percent = ReadWmiUInt("root\\cimv2", "Win32_Battery", "EstimatedChargeRemaining");
+
+        bool? charging = null;
+        int? rate = null;
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT Charging, ChargeRate, DischargeRate FROM BatteryStatus");
+            var o = searcher.Get().Cast<ManagementObject>().FirstOrDefault();
+            if (o != null)
+            {
+                charging = o["Charging"] as bool?;
+                rate = charging == true ? o["ChargeRate"] as uint? is uint c ? (int)c : null
+                                         : o["DischargeRate"] as uint? is uint d ? (int)d : null;
+            }
+        }
+        catch { }
+
+        return new BatteryHealth(design, full, percent, charging, rate);
+    }
+
+    private static int? ReadWmiUInt(string ns, string wmiClass, string field)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(ns, $"SELECT {field} FROM {wmiClass}");
+            var o = searcher.Get().Cast<ManagementObject>().FirstOrDefault();
+            return o?[field] switch { uint u => (int)u, ushort s => (int)s, _ => null };
+        }
+        catch { return null; }
+    }
+
+    /// <returns>true/false = current DC lid-close action, null = setting not exposed on this hardware.</returns>
+    public bool? IsHibernateOnLidClose()
+    {
+        var (code, output) = RunPowercfg("/q SCHEME_CURRENT SUB_BUTTONS LIDACTION");
+        if (code != 0) return null;
+        var m = Regex.Match(output, @"Current DC Power Setting Index:\s*0x0*([0-9a-fA-F]+)");
+        return m.Success ? m.Groups[1].Value.TrimEnd() == "2" : null;
+    }
+
+    public ActionResult SetHibernateOnLidClose(bool enabled)
+    {
+        RunPowercfg("-attributes SUB_BUTTONS LIDACTION -ATTRIB_HIDE"); // unhide; some OEM images hide it by default
+
+        if (enabled)
+        {
+            var (hibCode, hibOut) = RunPowercfg("/hibernate on");
+            if (hibCode != 0)
+                return new ActionResult(false, "Msg_SecurityFailed", "Hibernate", hibOut.Trim());
+
+            RunPowercfg("/setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 2");
+            RunPowercfg("/setactive SCHEME_CURRENT");
+
+            return IsHibernateOnLidClose() == true
+                ? new ActionResult(true, "Msg_HibernateOn")
+                : new ActionResult(false, "Msg_HibernateUnsupported");
+        }
+        else
+        {
+            var (code, output) = RunPowercfg("/setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 1");
+            RunPowercfg("/setactive SCHEME_CURRENT");
+            return code == 0
+                ? new ActionResult(true, "Msg_HibernateOff")
+                : new ActionResult(false, "Msg_SecurityFailed", "Hibernate", output.Trim());
+        }
+    }
+
+    private static (int Code, string Output) RunPowercfg(string args)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("powercfg", args)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            })!;
+            var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+            p.WaitForExit(10000);
+            return (p.ExitCode, output);
+        }
+        catch (Exception ex) { return (-1, ex.Message); }
+    }
+}
