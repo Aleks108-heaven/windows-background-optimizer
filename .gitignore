@@ -1,6 +1,7 @@
 bin/
 obj/
 publish/
+publish-arm64/
 
 # Windows Explorer per-folder customization (local only, not app content)
 desktop.ini
