@@ -23,6 +23,7 @@
     <conv:MemorySeverityBrushConverter x:Key="MemorySeverityBrush"/>
     <conv:PrioritySeverityBrushConverter x:Key="PrioritySeverityBrush"/>
     <conv:ProtectedToLockGlyphConverter x:Key="ProtectedToLockGlyph"/>
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource BgBrush}"/>

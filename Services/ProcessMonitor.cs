@@ -149,4 +149,54 @@ public class ProcessMonitor
             return new ActionResult(false, "Msg_PriorityFailed", name, ex.Message);
         }
     }
+
+    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    private static extern int NtSuspendProcess(IntPtr processHandle);
+
+    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    private static extern int NtResumeProcess(IntPtr processHandle);
+
+    /// <summary>
+    /// Freezes every thread in the process instantly (no CPU time at all, unlike
+    /// even Idle priority) via the same undocumented-but-stable NT call Task
+    /// Manager's "Freeze" and the Windows Efficiency Mode UI use. Never applied
+    /// to protected, interactive (browser/shell), or security-tool processes —
+    /// unlike SetPriority, security tools have no override: a fully-suspended
+    /// AV/EDR agent stops protecting the machine, not just runs slower.
+    /// </summary>
+    public static ActionResult SuspendProcess(int pid, string name)
+    {
+        if (ProtectedItems.IsProcessProtected(name))
+            return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        if (ProtectedItems.IsInteractive(name) || ProtectedItems.IsSecurityTool(name))
+            return new ActionResult(false, "Msg_ProcessInteractive", name);
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            var status = NtSuspendProcess(proc.Handle);
+            return status == 0
+                ? new ActionResult(true, "Msg_Suspended", name, pid)
+                : new ActionResult(false, "Msg_SuspendFailed", name, $"NTSTATUS 0x{status:X8}");
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult(false, "Msg_SuspendFailed", name, ex.Message);
+        }
+    }
+
+    public static ActionResult ResumeProcess(int pid, string name)
+    {
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            var status = NtResumeProcess(proc.Handle);
+            return status == 0
+                ? new ActionResult(true, "Msg_Resumed", name, pid)
+                : new ActionResult(false, "Msg_ResumeFailed", name, $"NTSTATUS 0x{status:X8}");
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult(false, "Msg_ResumeFailed", name, ex.Message);
+        }
+    }
 }

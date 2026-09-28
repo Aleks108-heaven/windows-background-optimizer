@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly StartupManager _startupManager = new();
     private readonly SvcManager _svcManager = new();
     private readonly SystemStats _systemStats = new();
+    private readonly WorkloadOptimizer _workloadOptimizer = new();
 
     private readonly ObservableCollection<ProcessEntry> _processes = new();
     private readonly ObservableCollection<StartupEntry> _startupItems = new();
@@ -24,6 +25,19 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, ProcessPriorityClass> _enforcedPriorities = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _refreshTimer;
     private System.Windows.Forms.NotifyIcon? _trayIcon;
+
+    // AI Workload Mode: pid -> priority to restore once RAM pressure clears. Kept separate
+    // from _enforcedPriorities (the manual "persist across restarts" feature) so the two
+    // never fight each other or reapply each other's changes.
+    private readonly Dictionary<int, ProcessPriorityClass> _autoThrottled = new();
+    private readonly HashSet<int> _autoSuspended = new();
+    private const long BytesPerGb = 1024L * 1024 * 1024;
+    private const long HysteresisBytes = 500L * 1024 * 1024;
+
+    // Asked once per session before the first unattended suspend, since freezing a process
+    // (unlike lowering its priority) is invisible unless the user knows to look for it.
+    // Declining unchecks the box so the tick loop doesn't ask again until re-enabled.
+    private bool _autoSuspendConsentGiven;
 
     // LIFO log of reversible changes made this session (Startup enable/disable,
     // Service start-type changes, Service stop). Not persisted across restarts -
@@ -68,6 +82,7 @@ public partial class MainWindow : Window
             RefreshProcesses();
             UpdateSystemStats();
             RefreshBattery(); // cheap WMI reads only; the rest of RefreshSecurity() spawns netsh and stays on-demand
+            AutoOptimizeTick();
         };
         _refreshTimer.Start();
     }
@@ -390,6 +405,135 @@ public partial class MainWindow : Window
                 if (PriorityPersistence.IsPersisted(entry.Name)) Log(PriorityPersistence.ClearPersistent(entry.Name));
             }
         }
+        RefreshProcesses();
+    }
+
+    // ---------- AI Workload Mode ----------
+
+    // Runs every 2s alongside RefreshProcesses. Only acts when the checkbox is on; entirely
+    // idle-CPU driven (see WorkloadOptimizer), never touches the browser or whatever window
+    // is focused, and only ever uses BelowNormal — never Idle, which is what broke Turnstile.
+    private void AutoOptimizeTick()
+    {
+        var foregroundPid = ForegroundWindow.GetForegroundPid();
+        foreach (var p in _processes)
+        {
+            p.IsForeground = p.Pid == foregroundPid;
+            p.IsSuspended = _autoSuspended.Contains(p.Pid);
+        }
+        _workloadOptimizer.UpdateStreaks(_processes, foregroundPid);
+
+        if (AutoOptimizeCheck.IsChecked != true)
+        {
+            if (_autoThrottled.Count > 0 || _autoSuspended.Count > 0) RestoreAutoThrottled();
+            return;
+        }
+
+        if (!double.TryParse(AutoOptimizeThresholdBox.Text, out var thresholdGb) || thresholdGb <= 0) thresholdGb = 2;
+        var thresholdBytes = (long)(thresholdGb * BytesPerGb);
+
+        var stats = _systemStats.Sample();
+        var freeBytes = stats.TotalMemoryBytes - stats.UsedMemoryBytes;
+
+        if (freeBytes < thresholdBytes)
+        {
+            foreach (var entry in _workloadOptimizer.GetIdleCandidates(_processes, foregroundPid))
+            {
+                if (_autoThrottled.ContainsKey(entry.Pid)) continue;
+                if (!Enum.TryParse<ProcessPriorityClass>(entry.Priority, out var original)) continue;
+
+                ProcessMonitor.TrimMemory(entry.Pid, entry.Name);
+                var result = ProcessMonitor.SetPriority(entry.Pid, entry.Name, ProcessPriorityClass.BelowNormal);
+                if (result.Ok)
+                {
+                    _autoThrottled[entry.Pid] = original;
+                    Log(Loc.Instance.Format("Msg_AutoThrottled", entry.Name, entry.Pid));
+                }
+            }
+
+            if (AllowSuspendCheck.IsChecked == true)
+            {
+                var longIdle = _workloadOptimizer.GetLongIdleCandidates(_processes, foregroundPid);
+                if (longIdle.Count > 0 && !_autoSuspendConsentGiven)
+                {
+                    if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_AutoSuspendTitle"], Loc.Instance["Dlg_AutoSuspendMessage"],
+                            null, danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+                    {
+                        AllowSuspendCheck.IsChecked = false;
+                        longIdle = new List<ProcessEntry>();
+                    }
+                    else
+                    {
+                        _autoSuspendConsentGiven = true;
+                    }
+                }
+
+                foreach (var entry in longIdle)
+                {
+                    if (_autoSuspended.Contains(entry.Pid)) continue;
+                    var result = ProcessMonitor.SuspendProcess(entry.Pid, entry.Name);
+                    if (result.Ok)
+                    {
+                        _autoSuspended.Add(entry.Pid);
+                        entry.IsSuspended = true;
+                        Log(result);
+                    }
+                }
+            }
+
+            SuspendedCountText.Text = _autoSuspended.Count > 0
+                ? Loc.Instance.Format("Lbl_SuspendedCount", _autoSuspended.Count)
+                : "";
+        }
+        else if (freeBytes > thresholdBytes + HysteresisBytes)
+        {
+            RestoreAutoThrottled();
+        }
+    }
+
+    private void RestoreAutoThrottled()
+    {
+        foreach (var (pid, priority) in _autoThrottled)
+        {
+            var entry = _processes.FirstOrDefault(p => p.Pid == pid);
+            if (entry != null) ProcessMonitor.SetPriority(pid, entry.Name, priority);
+        }
+        if (_autoThrottled.Count > 0) Log(Loc.Instance.Format("Msg_AutoRestored", _autoThrottled.Count));
+        _autoThrottled.Clear();
+
+        ResumeAutoSuspended();
+    }
+
+    private void ResumeAutoSuspended()
+    {
+        foreach (var pid in _autoSuspended.ToList())
+        {
+            var entry = _processes.FirstOrDefault(p => p.Pid == pid);
+            var name = entry?.Name ?? "process";
+            var result = ProcessMonitor.ResumeProcess(pid, name);
+            if (result.Ok) Log(result);
+            if (entry != null) entry.IsSuspended = false;
+        }
+        _autoSuspended.Clear();
+        SuspendedCountText.Text = "";
+    }
+
+    private void ResumeAllSuspended_Click(object sender, RoutedEventArgs e) => ResumeAutoSuspended();
+
+    // Kills a single memory-hog PID rather than the whole app: safe for browser helper
+    // processes (the browser respawns a fresh one), and blocked outright for anything
+    // protected or interactive by the same rule every other destructive action follows.
+    private void RestartHog_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ProcessEntry entry) return;
+        if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); return; }
+
+        var items = new List<string> { $"{entry.Name}  —  PID {entry.Pid}, {entry.MemoryDisplay}" };
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_KillTitle"], Loc.Instance["Dlg_KillMessage"], items,
+                danger: true, Loc.Instance["Btn_KillConfirm"], Loc.Instance["Dlg_Cancel"]))
+            return;
+
+        Log(ProcessMonitor.Kill(entry.Pid, entry.Name));
         RefreshProcesses();
     }
 

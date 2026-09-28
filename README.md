@@ -14,6 +14,9 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 - **Interactive apps** (browsers, Start/Search/shell hosts, Task Manager, VS Code, ...) can't be set to Idle or BelowNormal by default, because that makes them lag or freeze; raising them to Normal or higher is always allowed. Check **Allow throttling interactive apps** next to Apply Priority to override this for that action — genuinely protected/security-critical processes (see **Safety** below) stay off-limits regardless of this checkbox.
 - **Free RAM (selected / all)** — trims the working set of processes (`EmptyWorkingSet`). Nothing is killed and priorities don't change; Windows reclaims the pages only under memory pressure and the app faults back in whatever it uses, so it is safe for browsers too. "All" skips protected processes and anything under 20 MB. The freed memory tends to creep back, so treat it as a one-time cleanup.
 - **Laptop saver…** — for running processes classified as Telemetry or Vendor/Diagnostics (never Core, dev tools, protected or interactive apps), shows a confirmation list, then sets them to BelowNormal and trims their RAM. Nothing is killed or disabled, and **Undo** restores the original priorities.
+- **Auto-Optimize (RAM-aware)** — watches free RAM every 2 seconds. When it drops below the threshold you set (default 2 GB), background processes that have been genuinely idle (near-0% CPU for ~6+ seconds) get their RAM trimmed and priority lowered to BelowNormal — never Idle, and never the browser, shell, or whatever window you're actively using, since idleness (not app name) is what's being detected. Once free RAM recovers, everything it touched is automatically restored. This is the safe way to free resources for a heavy foreground workload (e.g. a local LLM in LM Studio) without hand-picking processes yourself, and without the mistake of pinning a browser to Idle priority (which can break Cloudflare-style bot checks — see **Safety** below).
+- **Allow suspending long-idle apps** — a stronger tier on top of Auto-Optimize: after ~5 minutes of continuous idle, fully freezes (0% CPU, via the same NT call Task Manager's "Freeze" uses) a background process instead of just deprioritizing it. It resumes instantly the moment you switch to it, or via **Resume All Suspended**. The first time this fires in a session it asks for confirmation, and a red "N suspended" indicator stays visible in the toolbar the whole time anything is frozen. Known antivirus/EDR/backup agents (see **Safety**) are never eligible, with no override.
+- **Restart** — appears next to any process row already flagged red (≥400 MB, a memory "hog"). One click kills just that PID (with the same confirmation as Kill Selected); safe for browser helper processes since the browser respawns a fresh one.
 
 ### Startup Apps tab
 
@@ -58,11 +61,13 @@ Minimizing the window sends it to the system tray (look for the blue "B" icon �
 This app runs elevated (admin) because managing services and killing other processes requires it — which also means it *could* be used to break things if you're not careful. Several layers of protection:
 
 1. **Protected list** ([Services/ProtectedItems.cs](Services/ProtectedItems.cs)) — hard-blocks changes to ~40 core Windows processes and services (`csrss`, `lsass`, `svchost`, `explorer`, `RpcSs`, `WinDefend`, `TrustedInstaller`, Windows Defender's engine and related services, etc.). These show as "Protected" in the grids and every action against them is refused, not just warned.
-2. **Confirmation dialogs** — killing a process, disabling a startup item, disabling a service, or stopping a service all prompt for confirmation before acting.
-3. **Restore Point safety net** — the "Auto restore point before risky changes" checkbox (Startup Apps tab, on by default) creates a System Restore point via the `SystemRestore` WMI class before Disable Startup, Set: Disabled, or Stop Now runs. There's also a manual **Create Restore Point** button for creating one on demand. This is best-effort: if System Restore is off for the system drive, or Windows' own once-per-24-hours throttle kicks in, the app logs it and proceeds anyway rather than blocking your actual request.
-4. **Undo Last Change** — reverts the most recent reversible action (startup enable/disable, service start-type change, service stop, firewall rule, registry tweak, or Laptop saver) from a session-only LIFO stack. It isn't persisted across app restarts — closing the app and reopening Startup Apps/Services to set something back by hand is equivalent.
+2. **Interactive-app list** (same file) — browsers, shell surfaces, Task Manager, and dev tools can't be set to Idle/BelowNormal without an explicit override, and are never eligible for automatic throttling or suspension at all (see below) — this is what stops Auto-Optimize from ever repeating the mistake of pinning a browser to Idle priority, which can break things like Cloudflare Turnstile bot verification.
+3. **Security-tool list** (same file) — ~30 common third-party antivirus/EDR/backup/endpoint-management process names (CrowdStrike, SentinelOne, Sophos, ESET, Malwarebytes, Kaspersky, Norton, McAfee, Bitdefender, Veeam, Acronis, and others). These are never eligible for the auto-suspend tier, with no override — unlike priority changes, freezing a security tool stops it from protecting the machine at all, not just runs it slower.
+4. **Confirmation dialogs** — killing a process, disabling a startup item, disabling a service, stopping a service, or restarting a memory hog all prompt for confirmation before acting. The auto-suspend tier additionally asks once, the first time it's about to freeze a process in a session, before proceeding unattended after that.
+5. **Restore Point safety net** — the "Auto restore point before risky changes" checkbox (Startup Apps tab, on by default) creates a System Restore point via the `SystemRestore` WMI class before Disable Startup, Set: Disabled, or Stop Now runs. There's also a manual **Create Restore Point** button for creating one on demand. This is best-effort: if System Restore is off for the system drive, or Windows' own once-per-24-hours throttle kicks in, the app logs it and proceeds anyway rather than blocking your actual request.
+6. **Undo Last Change** — reverts the most recent reversible action (startup enable/disable, service start-type change, service stop, firewall rule, registry tweak, or Laptop saver) from a session-only LIFO stack. It isn't persisted across app restarts — closing the app and reopening Startup Apps/Services to set something back by hand is equivalent. Auto-Optimize's own changes revert themselves automatically once RAM pressure clears, and suspended processes can always be resumed via **Resume All Suspended**.
 
-The protected list can't know about every third-party or OEM (e.g. laptop vendor) service, so exercise the same judgment yourself there — prefer **Manual** over **Disabled** for anything you're not 100% sure about, change one thing at a time, and lean on the Category hint and Restore Point button above for anything you're unsure about.
+The protected/interactive/security-tool lists can't know about every third-party or OEM (e.g. laptop vendor) process or service, so exercise the same judgment yourself there — prefer **Manual** over **Disabled** for anything you're not 100% sure about, change one thing at a time, and lean on the Category hint and Restore Point button above for anything you're unsure about.
 
 ## Requirements
 
@@ -121,15 +126,17 @@ Or run the compiled executable directly: `bin/Debug/net10.0-windows/BgOptimizer.
 MainWindow.xaml(.cs)        Main UI and event handlers
 Models/                     Data models (ProcessEntry, StartupEntry, ServiceEntry, ItemCategory)
 Services/
-  ProcessMonitor.cs         Process enumeration, CPU% sampling, kill/priority
+  ProcessMonitor.cs         Process enumeration, CPU% sampling, kill/priority/suspend-resume
   StartupManager.cs         Startup item enumeration and enable/disable (Run keys, Startup folders, Scheduled Tasks)
   SvcManager.cs              Windows service enumeration and start-type/stop/start control (via WMI)
-  ProtectedItems.cs         The safety deny-lists
+  ProtectedItems.cs         The safety deny-lists (protected, interactive, security-tool)
   ItemClassifier.cs         Best-effort Category labeling for Startup Apps/Services
   PriorityPersistence.cs    Persistent process priority via Image File Execution Options
   SecurityManager.cs        WinRM, SMB block, per-app outbound firewall rules (netsh)
   TweakManager.cs           Curated reversible registry tweaks with exact-value undo
   SystemRestoreService.cs   System Restore point creation (via the SystemRestore WMI class)
+  WorkloadOptimizer.cs      Idle-CPU-streak tracking and candidate selection for Auto-Optimize
+  ForegroundWindow.cs       Foreground-window PID detection, so Auto-Optimize never touches the app you're using
 Localization/
   Loc.cs                    Translation tables + live language-switching
   ActionResult.cs           Localized result type returned by service actions

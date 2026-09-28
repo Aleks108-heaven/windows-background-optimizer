@@ -42,6 +42,15 @@
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRam]}" Click="FreeRamSelected_Click" Margin="10,0,0,4"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRamAll]}" Click="FreeRamAll_Click" Margin="0,0,0,4"/>
                         <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_LaptopSaver]}" Click="LaptopSaver_Click" Margin="0,0,0,4"/>
+                        <CheckBox x:Name="AutoOptimizeCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoOptimize]}" VerticalAlignment="Center" Margin="16,0,0,4"
+                                  ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoOptimizeHint]}"/>
+                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_FreeRamBelow]}" VerticalAlignment="Center" Margin="8,0,4,4"/>
+                        <TextBox x:Name="AutoOptimizeThresholdBox" Width="40" Text="2" VerticalContentAlignment="Center" Margin="0,0,0,4"/>
+                        <TextBlock Text="GB" VerticalAlignment="Center" Margin="2,0,0,4"/>
+                        <CheckBox x:Name="AllowSuspendCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowSuspend]}" VerticalAlignment="Center" Margin="10,0,0,4"
+                                  ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowSuspendHint]}"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ResumeAllSuspended]}" Click="ResumeAllSuspended_Click" Margin="10,0,0,4"/>
+                        <TextBlock x:Name="SuspendedCountText" VerticalAlignment="Center" Margin="8,0,0,4" FontWeight="SemiBold" Foreground="{StaticResource DangerBrush}"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,4"/>
                         <TextBox x:Name="ProcessSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="ProcessSearch_TextChanged" Margin="0,0,0,4"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ProcessesAutoRefresh]}" VerticalAlignment="Center" Margin="16,0,0,4" Foreground="{StaticResource TextFaintBrush}"/>
@@ -102,6 +111,18 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Status]}" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Suspended]}" Foreground="{StaticResource TextFaintBrush}"
+                                                       Visibility="{Binding IsSuspended, Converter={StaticResource BoolToVisibility}}"/>
+                                            <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RestartHog]}" Tag="{Binding}" Click="RestartHog_Click"
+                                                    Visibility="{Binding IsHog, Converter={StaticResource BoolToVisibility}}" Padding="4,0"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

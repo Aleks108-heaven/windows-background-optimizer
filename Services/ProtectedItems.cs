@@ -31,6 +31,33 @@ internal static class ProtectedItems
         InteractiveProcessNames.Contains(processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
             ? processName[..^4] : processName);
 
+    // Third-party AV/EDR/backup/VPN agents: not covered by ProtectedProcessNames (which only
+    // lists Microsoft's own critical processes + Defender). These commonly run as low-CPU,
+    // idle, non-interactive background services, so without this list they'd be
+    // indistinguishable from ordinary throttle/suspend candidates to WorkloadOptimizer.
+    // Suspending one freezes real-time protection; unlike priority changes this is never
+    // allowed for these names, with no override.
+    public static readonly HashSet<string> SecurityToolProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // CrowdStrike, SentinelOne, Sophos, ESET, Malwarebytes, Kaspersky, Symantec/Norton,
+        // McAfee, Trend Micro, Carbon Black, Cortex XDR, Cylance, Webroot, Bitdefender,
+        // Avast/AVG, F-Secure, Palo Alto, Huntress, Cisco, Qualys, Rapid7, Tanium
+        "CSFalconService", "CSFalconContainer", "SentinelAgent", "SentinelServiceHost",
+        "SophosHealth", "SophosFileScanner", "SophosSafestore", "ekrn", "ermsg",
+        "mbam", "MBAMService", "avp", "avpui", "ccSvcHst", "NortonSecurity", "N360",
+        "mcshield", "Mcafee", "mfemms", "tmlisten", "PccNTMon", "cb", "RepMgr",
+        "cyserver", "CylanceSvc", "WRSA", "bdagent", "bdredline", "vsserv",
+        "AvastSvc", "AVGSvc", "fsav", "fsorsp", "PanGPS", "CyveraService",
+        "traps", "HuntressAgent", "ciscoamp", "sfc", "qualys-cloud-agent",
+        "ir_agent", "TaniumClient",
+        // Backup / endpoint-management agents commonly mistaken for idle background junk
+        "VeeamAgent", "AcronisAgent", "MsMpEngCP",
+    };
+
+    public static bool IsSecurityTool(string processName) =>
+        SecurityToolProcessNames.Contains(processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? processName[..^4] : processName);
+
     public static readonly HashSet<string> ProtectedServiceNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "RpcSs", "RpcEptMapper", "DcomLaunch", "LSM", "Winmgmt", "EventLog",
