@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     // (unlike lowering its priority) is invisible unless the user knows to look for it.
     // Declining unchecks the box so the tick loop doesn't ask again until re-enabled.
     private bool _autoSuspendConsentGiven;
+    private bool _tickRunning;
 
     // LIFO log of reversible changes made this session (Startup enable/disable,
     // Service start-type changes, Service stop). Not persisted across restarts -
@@ -79,10 +80,18 @@ public partial class MainWindow : Window
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += (_, _) =>
         {
-            RefreshProcesses();
-            UpdateSystemStats();
-            RefreshBattery(); // cheap WMI reads only; the rest of RefreshSecurity() spawns netsh and stays on-demand
-            AutoOptimizeTick();
+            // AutoOptimizeTick can open a modal dialog; DispatcherTimer keeps ticking inside
+            // that nested loop, so without this guard a second tick would stack another dialog.
+            if (_tickRunning) return;
+            _tickRunning = true;
+            try
+            {
+                RefreshProcesses();
+                UpdateSystemStats();
+                RefreshBattery(); // cheap WMI reads only; the rest of RefreshSecurity() spawns netsh and stays on-demand
+                AutoOptimizeTick();
+            }
+            finally { _tickRunning = false; }
         };
         _refreshTimer.Start();
     }
@@ -138,12 +147,12 @@ public partial class MainWindow : Window
         canvas.Children.Add(new System.Windows.Shapes.Polygon
         {
             Points = fillPoints,
-            Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(70, 14, 99, 156)),
+            Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(70, 76, 141, 255)),
         });
         canvas.Children.Add(new System.Windows.Shapes.Polyline
         {
             Points = linePoints,
-            Stroke = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(14, 99, 156)),
+            Stroke = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 141, 255)),
             StrokeThickness = 1.5,
         });
     }
@@ -297,7 +306,7 @@ public partial class MainWindow : Window
     private void KillProcess_Click(object sender, RoutedEventArgs e)
     {
         var selected = ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
         var targets = new List<ProcessEntry>();
         foreach (var entry in selected)
@@ -371,14 +380,14 @@ public partial class MainWindow : Window
                 int n = 0;
                 foreach (var (pid, name, prio) in previous)
                     if (ProcessMonitor.SetPriority(pid, name, prio).Ok) n++;
-                return new ActionResult(true, "Msg_PriorityChanged", "laptop saver", n, "restored");
+                return new ActionResult(true, "Msg_SaverUndone", n);
             });
     }
 
     private void ApplyPriority_Click(object sender, RoutedEventArgs e)
     {
         var selected = ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
         var priorityName = (PriorityCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "Normal";
         if (!Enum.TryParse<ProcessPriorityClass>(priorityName, out var priority)) return;
@@ -550,7 +559,7 @@ public partial class MainWindow : Window
     private void EnableStartup_Click(object sender, RoutedEventArgs e)
     {
         var selected = StartupGrid.SelectedItems.Cast<StartupEntry>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
         foreach (var entry in selected)
         {
@@ -566,7 +575,7 @@ public partial class MainWindow : Window
     private void DisableStartup_Click(object sender, RoutedEventArgs e)
     {
         var selected = StartupGrid.SelectedItems.Cast<StartupEntry>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
         var items = selected.Select(s => s.Name).ToList();
         if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_ConfirmTitle"], Loc.Instance["Dlg_ConfirmDisableStartupMsg"], items,
@@ -595,21 +604,49 @@ public partial class MainWindow : Window
     private readonly SecurityManager _security = new();
     private readonly BatteryManager _battery = new();
 
-    private void RefreshSecurity()
+    private bool _securityRefreshing;
+    private bool _securityRefreshQueued;
+
+    // The reads spawn netsh (several times, one dumping every firewall rule) and powercfg, so
+    // they run on a worker thread; only the text/ItemsSource updates touch the UI. A request
+    // that arrives mid-refresh (e.g. a language switch) is queued and re-run afterwards so the
+    // labels never end up stuck in the previous language.
+    private async void RefreshSecurity()
     {
-        string Fw(bool? on) => Loc.Instance[on switch { true => "Sec_On", false => "Sec_Off", null => "Sec_Unknown" }];
-        var (domain, priv, pub) = _security.GetFirewallProfiles();
-        FirewallStatusText.Text = Loc.Instance.Format("Sec_FwLine", Fw(domain), Fw(priv), Fw(pub));
+        if (_securityRefreshing) { _securityRefreshQueued = true; return; }
+        _securityRefreshing = true;
+        try
+        {
+            do
+            {
+                _securityRefreshQueued = false;
+                var snapshot = await Task.Run(() => (
+                    Firewall: _security.GetFirewallProfiles(),
+                    WinRm: _security.GetWinRm(),
+                    SmbBlocked: _security.IsSmbBlocked(),
+                    BlockedApps: _security.GetBlockedApps(),
+                    Hibernate: _battery.IsHibernateOnLidClose()));
 
-        var winRm = _security.GetWinRm();
-        WinRmStatusText.Text = Loc.Instance.Format("Sec_WinRmLine", winRm.Status, winRm.StartMode);
+                string Fw(bool? on) => Loc.Instance[on switch { true => "Sec_On", false => "Sec_Off", null => "Sec_Unknown" }];
+                var (domain, priv, pub) = snapshot.Firewall;
+                FirewallStatusText.Text = Loc.Instance.Format("Sec_FwLine", Fw(domain), Fw(priv), Fw(pub));
+                WinRmStatusText.Text = Loc.Instance.Format("Sec_WinRmLine", snapshot.WinRm.Status, snapshot.WinRm.StartMode);
+                SmbStatusText.Text = Loc.Instance.Format("Sec_SmbLine",
+                    Loc.Instance[snapshot.SmbBlocked ? "Sec_Blocked" : "Sec_NotBlocked"]);
 
-        SmbStatusText.Text = Loc.Instance.Format("Sec_SmbLine",
-            Loc.Instance[_security.IsSmbBlocked() ? "Sec_Blocked" : "Sec_NotBlocked"]);
+                BlockedAppsCombo.ItemsSource = snapshot.BlockedApps;
+                if (BlockedAppsCombo.Items.Count > 0) BlockedAppsCombo.SelectedIndex = 0;
 
-        RefreshBlockedApps();
-        RefreshBattery();
-        RefreshHibernateStatus();
+                RefreshBattery();
+                HibernateStatusText.Text = Loc.Instance.Format("Sec_HibernateLine",
+                    Loc.Instance[snapshot.Hibernate switch { true => "Sec_HibernateOn", false => "Sec_HibernateOff", null => "Sec_HibernateUnknown" }]);
+            } while (_securityRefreshQueued);
+        }
+        catch (Exception ex)
+        {
+            Log(Loc.Instance.Format("Msg_SecurityRefreshFailed", ex.Message));
+        }
+        finally { _securityRefreshing = false; }
     }
 
     // Cheap WMI reads only (no process spawn) - safe to call every 2s so charge % doesn't go stale.
@@ -632,14 +669,6 @@ public partial class MainWindow : Window
             : h.FullChargeMWh is int fullOnly
                 ? Loc.Instance.Format("Sec_BatteryLineNoDesign", fullOnly, h.Percent, rateText)
                 : Loc.Instance["Sec_BatteryUnavailable"];
-    }
-
-    // Spawns powercfg, so this stays on-demand (tab load, Refresh button, after toggling) rather than on the 2s timer.
-    private void RefreshHibernateStatus()
-    {
-        var hib = _battery.IsHibernateOnLidClose();
-        HibernateStatusText.Text = Loc.Instance.Format("Sec_HibernateLine",
-            Loc.Instance[hib switch { true => "Sec_HibernateOn", false => "Sec_HibernateOff", null => "Sec_HibernateUnknown" }]);
     }
 
     // ---------- Tweaks ----------
@@ -686,12 +715,6 @@ public partial class MainWindow : Window
         Log(result);
         if (result.Ok) _undoStack.Push(() => { var r = _tweaks.Restore(snapshot); BuildTweaks(); return r; });
         BuildTweaks();
-    }
-
-    private void RefreshBlockedApps()
-    {
-        BlockedAppsCombo.ItemsSource = _security.GetBlockedApps();
-        if (BlockedAppsCombo.Items.Count > 0) BlockedAppsCombo.SelectedIndex = 0;
     }
 
     private void AppBlock_Click(object sender, RoutedEventArgs e)
@@ -773,7 +796,7 @@ public partial class MainWindow : Window
     private void SetServiceMode(string mode, bool needsConfirm)
     {
         var selected = ServiceGrid.SelectedItems.Cast<ServiceEntry>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
         var targets = new List<ServiceEntry>();
         foreach (var entry in selected)
@@ -813,7 +836,7 @@ public partial class MainWindow : Window
     private void ServiceStop_Click(object sender, RoutedEventArgs e)
     {
         var selected = ServiceGrid.SelectedItems.Cast<ServiceEntry>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
         var targets = new List<ServiceEntry>();
         foreach (var entry in selected)

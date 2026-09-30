@@ -10,9 +10,11 @@
     <SolidColorBrush x:Key="BorderSoftBrush" Color="#232830"/>
     <SolidColorBrush x:Key="TextBrush" Color="#E7EAF0"/>
     <SolidColorBrush x:Key="TextDimBrush" Color="#9AA2B1"/>
-    <SolidColorBrush x:Key="TextFaintBrush" Color="#5E6472"/>
+    <SolidColorBrush x:Key="TextFaintBrush" Color="#838B9B"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#4C8DFF"/>
     <SolidColorBrush x:Key="AccentDimBrush" Color="#2F5FB8"/>
+    <!-- Solid fill for primary buttons: white text on it is ~4.7:1 (AccentBrush is only ~3.2:1). -->
+    <SolidColorBrush x:Key="AccentSolidBrush" Color="#2F6FE0"/>
     <SolidColorBrush x:Key="DangerBrush" Color="#EF5B5B"/>
     <SolidColorBrush x:Key="GoodBrush" Color="#35C98F"/>
     <SolidColorBrush x:Key="DangerBgBrush" Color="#EF5B5B" Opacity="0.14"/>
@@ -74,9 +76,9 @@
     <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}"/>
 
     <Style x:Key="BtnPrimary" TargetType="Button" BasedOn="{StaticResource BtnGhost}">
-        <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="Background" Value="{StaticResource AccentSolidBrush}"/>
         <Setter Property="Foreground" Value="White"/>
-        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AccentSolidBrush}"/>
     </Style>
 
     <Style x:Key="BtnDanger" TargetType="Button" BasedOn="{StaticResource BtnGhost}">

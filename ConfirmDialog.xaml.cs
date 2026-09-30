@@ -18,6 +18,17 @@ public partial class ConfirmDialog : Window
         ConfirmButton.Content = confirmText;
         ConfirmButton.Style = (Style)FindResource(danger ? "BtnDanger" : "BtnPrimary");
 
+        // Destructive confirmations default to Cancel so a stray Enter can't run the action.
+        if (danger)
+        {
+            CancelButton.IsDefault = true;
+            Loaded += (_, _) => CancelButton.Focus();
+        }
+        else
+        {
+            ConfirmButton.IsDefault = true;
+        }
+
         if (items is { Count: > 0 })
         {
             ItemsList.ItemsSource = items;

@@ -17,7 +17,7 @@
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,6">
             <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Language]}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-            <ComboBox x:Name="LanguageCombo" Width="140" DisplayMemberPath="Name"/>
+            <ComboBox x:Name="LanguageCombo" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Language]}" Width="140" DisplayMemberPath="Name"/>
         </StackPanel>
 
         <TabControl Grid.Row="1">
@@ -25,35 +25,54 @@
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Processes]}">
                 <DockPanel Margin="8">
                     <WrapPanel DockPanel.Dock="Top">
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RefreshNow]}" Click="RefreshProcesses_Click" Margin="0,0,0,4"/>
-                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_KillSelected]}" Click="KillProcess_Click" Margin="0,0,0,4"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" VerticalAlignment="Center" Margin="12,0,4,4"/>
-                        <ComboBox x:Name="PriorityCombo" Width="120" SelectedIndex="0" Margin="0,0,0,4">
-                            <ComboBoxItem Content="Idle"/>
-                            <ComboBoxItem Content="BelowNormal"/>
-                            <ComboBoxItem Content="Normal"/>
-                            <ComboBoxItem Content="AboveNormal"/>
-                            <ComboBoxItem Content="High"/>
-                        </ComboBox>
-                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click" Margin="0,0,0,4"/>
-                        <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,4"/>
-                        <CheckBox x:Name="AllowInteractiveThrottleCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottle]}" VerticalAlignment="Center" Margin="10,0,0,4"
-                                  ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottleHint]}"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRam]}" Click="FreeRamSelected_Click" Margin="10,0,0,4"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRamAll]}" Click="FreeRamAll_Click" Margin="0,0,0,4"/>
-                        <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_LaptopSaver]}" Click="LaptopSaver_Click" Margin="0,0,0,4"/>
-                        <CheckBox x:Name="AutoOptimizeCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoOptimize]}" VerticalAlignment="Center" Margin="16,0,0,4"
-                                  ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoOptimizeHint]}"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_FreeRamBelow]}" VerticalAlignment="Center" Margin="8,0,4,4"/>
-                        <TextBox x:Name="AutoOptimizeThresholdBox" Width="40" Text="2" VerticalContentAlignment="Center" Margin="0,0,0,4"/>
-                        <TextBlock Text="GB" VerticalAlignment="Center" Margin="2,0,0,4"/>
-                        <CheckBox x:Name="AllowSuspendCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowSuspend]}" VerticalAlignment="Center" Margin="10,0,0,4"
-                                  ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowSuspendHint]}"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ResumeAllSuspended]}" Click="ResumeAllSuspended_Click" Margin="10,0,0,4"/>
-                        <TextBlock x:Name="SuspendedCountText" VerticalAlignment="Center" Margin="8,0,0,4" FontWeight="SemiBold" Foreground="{StaticResource DangerBrush}"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,4"/>
-                        <TextBox x:Name="ProcessSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="ProcessSearch_TextChanged" Margin="0,0,0,4"/>
-                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ProcessesAutoRefresh]}" VerticalAlignment="Center" Margin="16,0,0,4" Foreground="{StaticResource TextFaintBrush}"/>
+                        <!-- Actions on the selected rows; Kill is last and set apart from Refresh -->
+                        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="0,0,8,6">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RefreshNow]}" Click="RefreshProcesses_Click"/>
+                                <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRam]}" Click="FreeRamSelected_Click"/>
+                                <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_FreeRamAll]}" Click="FreeRamAll_Click"/>
+                                <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_LaptopSaver]}" Click="LaptopSaver_Click"/>
+                                <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_KillSelected]}" Click="KillProcess_Click" Margin="20,4,4,4"/>
+                            </StackPanel>
+                        </Border>
+                        <!-- Priority for the selected rows -->
+                        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="0,0,8,6">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" VerticalAlignment="Center" Margin="6,0,4,0"/>
+                                <ComboBox x:Name="PriorityCombo" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" Width="120" SelectedIndex="0">
+                                    <ComboBoxItem Content="Idle"/>
+                                    <ComboBoxItem Content="BelowNormal"/>
+                                    <ComboBoxItem Content="Normal"/>
+                                    <ComboBoxItem Content="AboveNormal"/>
+                                    <ComboBoxItem Content="High"/>
+                                </ComboBox>
+                                <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click"/>
+                                <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                <CheckBox x:Name="AllowInteractiveThrottleCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottle]}" VerticalAlignment="Center" Margin="10,0,4,0"
+                                          ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottleHint]}"/>
+                            </StackPanel>
+                        </Border>
+                        <!-- AI Workload Mode: unattended, RAM-pressure-driven -->
+                        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="0,0,8,6">
+                            <StackPanel Orientation="Horizontal">
+                                <CheckBox x:Name="AutoOptimizeCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoOptimize]}" VerticalAlignment="Center" Margin="6,0,0,0"
+                                          ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoOptimizeHint]}"/>
+                                <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_FreeRamBelow]}" VerticalAlignment="Center" Margin="8,0,4,0"/>
+                                <TextBox x:Name="AutoOptimizeThresholdBox" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_FreeRamBelow]}" Width="40" Text="2" VerticalContentAlignment="Center"/>
+                                <TextBlock Text="GB" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                                <CheckBox x:Name="AllowSuspendCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowSuspend]}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                          ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowSuspendHint]}"/>
+                                <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ResumeAllSuspended]}" Click="ResumeAllSuspended_Click" Margin="10,4,4,4"/>
+                                <TextBlock x:Name="SuspendedCountText" VerticalAlignment="Center" Margin="4,0,6,0" FontWeight="SemiBold" Foreground="{StaticResource DangerBrush}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="0,0,8,6">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="6,0,4,0"/>
+                                <TextBox x:Name="ProcessSearchBox" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" Width="180" VerticalContentAlignment="Center" TextChanged="ProcessSearch_TextChanged"/>
+                                <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ProcessesAutoRefresh]}" VerticalAlignment="Center" Margin="10,0,6,0" Foreground="{StaticResource TextFaintBrush}"/>
+                            </StackPanel>
+                        </Border>
                     </WrapPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,8,0,4">
                         <Border Width="220" Height="64" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
@@ -75,33 +94,52 @@
                             </Grid>
                         </Border>
                     </StackPanel>
-                    <DataGrid x:Name="ProcessGrid" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
+                    <DataGrid x:Name="ProcessGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Processes]}" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="220"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Pid]}" Binding="{Binding Pid}" Width="70"/>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_CpuPercent]}" Binding="{Binding CpuPercent, StringFormat={}{0:F1}}" Width="80">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                        <Setter Property="Foreground" Value="{Binding CpuPercent, Converter={StaticResource CpuSeverityBrush}}"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Memory]}" Binding="{Binding MemoryDisplay}" Width="100">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                        <Setter Property="Foreground" Value="{Binding MemoryBytes, Converter={StaticResource MemorySeverityBrush}}"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Priority]}" Binding="{Binding Priority}" Width="100">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{Binding Priority, Converter={StaticResource PrioritySeverityBrush}}"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_CpuPercent]}" SortMemberPath="CpuPercent" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- Glyph + weight repeat the colour so severity isn't colour-only -->
+                                            <TextBlock Text="{Binding CpuPercent, Converter={StaticResource CpuSeverityBrush}}" Width="14" FontSize="10" VerticalAlignment="Center"
+                                                       Foreground="{Binding CpuPercent, Converter={StaticResource CpuSeverityBrush}}"/>
+                                            <TextBlock Text="{Binding CpuPercent, StringFormat={}{0:F1}}"
+                                                       FontWeight="{Binding CpuPercent, Converter={StaticResource CpuSeverityBrush}}"
+                                                       Foreground="{Binding CpuPercent, Converter={StaticResource CpuSeverityBrush}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Memory]}" SortMemberPath="MemoryBytes" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- Glyph + weight repeat the colour so severity isn't colour-only -->
+                                            <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource MemorySeverityBrush}}" Width="14" FontSize="10" VerticalAlignment="Center"
+                                                       Foreground="{Binding MemoryBytes, Converter={StaticResource MemorySeverityBrush}}"/>
+                                            <TextBlock Text="{Binding MemoryDisplay}"
+                                                       FontWeight="{Binding MemoryBytes, Converter={StaticResource MemorySeverityBrush}}"
+                                                       Foreground="{Binding MemoryBytes, Converter={StaticResource MemorySeverityBrush}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Priority]}" SortMemberPath="Priority" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- Glyph + weight repeat the colour so severity isn't colour-only -->
+                                            <TextBlock Text="{Binding Priority, Converter={StaticResource PrioritySeverityBrush}}" Width="14" FontSize="10" VerticalAlignment="Center"
+                                                       Foreground="{Binding Priority, Converter={StaticResource PrioritySeverityBrush}}"/>
+                                            <TextBlock Text="{Binding Priority}"
+                                                       FontWeight="{Binding Priority, Converter={StaticResource PrioritySeverityBrush}}"
+                                                       Foreground="{Binding Priority, Converter={StaticResource PrioritySeverityBrush}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Protected]}" Binding="{Binding IsProtected, Converter={StaticResource ProtectedToLockGlyph}}" Width="80">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -135,16 +173,15 @@
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Refresh]}" Click="RefreshStartup_Click"/>
                         <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_EnableSelected]}" Click="EnableStartup_Click"/>
                         <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_DisableSelected]}" Click="DisableStartup_Click"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_UndoLast]}" Click="UndoLast_Click" Margin="12,0,0,0"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,0"/>
-                        <TextBox x:Name="StartupSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="StartupSearch_TextChanged"/>
+                        <TextBox x:Name="StartupSearchBox" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" Width="180" VerticalContentAlignment="Center" TextChanged="StartupSearch_TextChanged"/>
                     </StackPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,6,0,0">
                         <CheckBox x:Name="AutoRestorePointCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoRestorePoint]}" VerticalAlignment="Center" IsChecked="True"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_CreateRestorePoint]}" Click="CreateRestorePoint_Click" Margin="12,0,0,0"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_CategoryNote]}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="{StaticResource TextFaintBrush}"/>
                     </StackPanel>
-                    <DataGrid x:Name="StartupGrid" Margin="0,8,0,0" RowStyle="{StaticResource BaseRowStyle}">
+                    <DataGrid x:Name="StartupGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Startup]}" Margin="0,8,0,0" RowStyle="{StaticResource BaseRowStyle}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="200"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Command]}" Binding="{Binding Command}" Width="360"/>
@@ -165,12 +202,11 @@
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_SetManual]}" Click="ServiceManual_Click"/>
                         <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_SetDisabled]}" Click="ServiceDisabled_Click"/>
                         <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_StopNow]}" Click="ServiceStop_Click"/>
-                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_UndoLast]}" Click="UndoLast_Click" Margin="12,0,0,0"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,0"/>
-                        <TextBox x:Name="ServiceSearchBox" Width="180" VerticalContentAlignment="Center" TextChanged="ServiceSearch_TextChanged"/>
+                        <TextBox x:Name="ServiceSearchBox" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" Width="180" VerticalContentAlignment="Center" TextChanged="ServiceSearch_TextChanged"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ServicesProtected]}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="{StaticResource TextFaintBrush}"/>
                     </StackPanel>
-                    <DataGrid x:Name="ServiceGrid" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
+                    <DataGrid x:Name="ServiceGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Services]}" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_DisplayName]}" Binding="{Binding DisplayName}" Width="250"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_ServiceName]}" Binding="{Binding Name}" Width="160"/>
@@ -193,6 +229,7 @@
 
             <!-- SECURITY TAB -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Security]}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="12">
                     <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_Firewall]}" FontWeight="SemiBold"/>
                     <TextBlock x:Name="FirewallStatusText" Margin="0,4,0,16" Foreground="{StaticResource TextDimBrush}"/>
@@ -218,7 +255,7 @@
                     <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_AppFwHint]}" Foreground="{StaticResource TextFaintBrush}" TextWrapping="Wrap"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                         <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_BlockApp]}" Click="AppBlock_Click"/>
-                        <ComboBox x:Name="BlockedAppsCombo" MinWidth="320" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="BlockedAppsCombo" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_AppFw]}" MinWidth="320" Margin="8,0,0,0"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_RemoveRule]}" Click="AppUnblock_Click"/>
                     </StackPanel>
 
@@ -232,6 +269,7 @@
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Disable]}" Click="HibernateOnLidDisable_Click"/>
                     </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
             <!-- TWEAKS TAB -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Tweaks]}">
@@ -248,9 +286,13 @@
             <DockPanel>
                 <Grid DockPanel.Dock="Top" Margin="10,6,6,6">
                     <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[GroupBox_ActivityLog]}" Foreground="{StaticResource TextFaintBrush}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ClearLog]}" HorizontalAlignment="Right" Padding="8,2" FontSize="11" Click="ClearLog_Click"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <!-- Undo is global (one LIFO stack across every tab), so it lives with the log of what was done -->
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_UndoLast]}" Padding="8,2" FontSize="11" Click="UndoLast_Click"/>
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ClearLog]}" Padding="8,2" FontSize="11" Click="ClearLog_Click"/>
+                    </StackPanel>
                 </Grid>
-                <ListBox x:Name="LogList" Background="Transparent" Foreground="{StaticResource TextDimBrush}" BorderThickness="0"/>
+                <ListBox x:Name="LogList" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[GroupBox_ActivityLog]}" Background="Transparent" Foreground="{StaticResource TextDimBrush}" BorderThickness="0"/>
             </DockPanel>
         </Border>
     </Grid>

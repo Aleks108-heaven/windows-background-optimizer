@@ -27,7 +27,7 @@ public class ProcessEntry : INotifyPropertyChanged
 
     // Matches SeverityConverters' "Danger" threshold so the red highlight and the
     // AI Workload Mode "Restart" action always agree on what counts as a hog.
-    public bool IsHog => MemoryBytes >= 400L * 1024 * 1024;
+    public bool IsHog => MemoryBytes >= Converters.SeverityRules.MemoryDangerBytes;
 
     private string _priority = "";
     public string Priority

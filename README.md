@@ -7,6 +7,7 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 ### Processes tab
 
 - Live list of all running processes with CPU % and memory usage, auto-refreshing every 2 seconds.
+- CPU, memory and priority values are flagged by colour *and* a glyph/weight (▲ warn, ◆ danger and bold, ▼ low priority), so severity is readable without relying on colour.
 - **Kill Selected** — force-terminates the selected process (with a confirmation prompt).
 - **Apply Priority** — sets a process's CPU scheduling priority (Idle, BelowNormal, Normal, AboveNormal, High) without killing it. `Idle` is the safest way to throttle something you don't want competing for CPU while keeping it running.
 - **Persist across restarts** — a checkbox next to Apply Priority. Checked, it writes the chosen priority to the registry under Image File Execution Options (the same mechanism Task Manager's own "Efficiency Mode" uses), so Windows re-applies it every time that exe launches, not just until the next reboot. Unchecked, applying just changes the live process as before, and clears any persistent rule that exe previously had. Two things worth knowing: it matches by the exe's bare filename, so it affects every instance of that exe system-wide, not just the one selected in the grid; and this registry area is also how debuggers attach to a process at launch, so some security software watches writes to it.
@@ -46,7 +47,7 @@ A curated set of reversible registry tweaks, each behind a confirmation: minimum
 
 ### Activity Log
 
-A running log at the bottom of the window records every action taken (or blocked), with a timestamp.
+A running log at the bottom of the window records every action taken (or blocked), with a timestamp. The **Undo** and **Clear** buttons sit in its header bar.
 
 ### Multi-language UI
 
@@ -63,9 +64,9 @@ This app runs elevated (admin) because managing services and killing other proce
 1. **Protected list** ([Services/ProtectedItems.cs](Services/ProtectedItems.cs)) — hard-blocks changes to ~40 core Windows processes and services (`csrss`, `lsass`, `svchost`, `explorer`, `RpcSs`, `WinDefend`, `TrustedInstaller`, Windows Defender's engine and related services, etc.). These show as "Protected" in the grids and every action against them is refused, not just warned.
 2. **Interactive-app list** (same file) — browsers, shell surfaces, Task Manager, and dev tools can't be set to Idle/BelowNormal without an explicit override, and are never eligible for automatic throttling or suspension at all (see below) — this is what stops Auto-Optimize from ever repeating the mistake of pinning a browser to Idle priority, which can break things like Cloudflare Turnstile bot verification.
 3. **Security-tool list** (same file) — ~30 common third-party antivirus/EDR/backup/endpoint-management process names (CrowdStrike, SentinelOne, Sophos, ESET, Malwarebytes, Kaspersky, Norton, McAfee, Bitdefender, Veeam, Acronis, and others). These are never eligible for the auto-suspend tier, with no override — unlike priority changes, freezing a security tool stops it from protecting the machine at all, not just runs it slower.
-4. **Confirmation dialogs** — killing a process, disabling a startup item, disabling a service, stopping a service, or restarting a memory hog all prompt for confirmation before acting. The auto-suspend tier additionally asks once, the first time it's about to freeze a process in a session, before proceeding unattended after that.
+4. **Confirmation dialogs** — killing a process, disabling a startup item, disabling a service, stopping a service, or restarting a memory hog all prompt for confirmation before acting. Destructive confirmations default to **Cancel** (and take focus), so a stray Enter can't run the action. Action buttons that need a selection log "Nothing selected" instead of silently doing nothing. The auto-suspend tier additionally asks once, the first time it's about to freeze a process in a session, before proceeding unattended after that.
 5. **Restore Point safety net** — the "Auto restore point before risky changes" checkbox (Startup Apps tab, on by default) creates a System Restore point via the `SystemRestore` WMI class before Disable Startup, Set: Disabled, or Stop Now runs. There's also a manual **Create Restore Point** button for creating one on demand. This is best-effort: if System Restore is off for the system drive, or Windows' own once-per-24-hours throttle kicks in, the app logs it and proceeds anyway rather than blocking your actual request.
-6. **Undo Last Change** — reverts the most recent reversible action (startup enable/disable, service start-type change, service stop, firewall rule, registry tweak, or Laptop saver) from a session-only LIFO stack. It isn't persisted across app restarts — closing the app and reopening Startup Apps/Services to set something back by hand is equivalent. Auto-Optimize's own changes revert themselves automatically once RAM pressure clears, and suspended processes can always be resumed via **Resume All Suspended**.
+6. **Undo Last Change** — the button in the Activity Log bar (it is global, so it lives with the log rather than on any one tab); reverts the most recent reversible action (startup enable/disable, service start-type change, service stop, firewall rule, registry tweak, or Laptop saver) from a session-only LIFO stack. It isn't persisted across app restarts — closing the app and reopening Startup Apps/Services to set something back by hand is equivalent. Auto-Optimize's own changes revert themselves automatically once RAM pressure clears, and suspended processes can always be resumed via **Resume All Suspended**.
 
 The protected/interactive/security-tool lists can't know about every third-party or OEM (e.g. laptop vendor) process or service, so exercise the same judgment yourself there — prefer **Manual** over **Disabled** for anything you're not 100% sure about, change one thing at a time, and lean on the Category hint and Restore Point button above for anything you're unsure about.
 
@@ -124,6 +125,9 @@ Or run the compiled executable directly: `bin/Debug/net10.0-windows/BgOptimizer.
 
 ```
 MainWindow.xaml(.cs)        Main UI and event handlers
+ConfirmDialog.xaml(.cs)    Themed confirmation dialog (lists affected items; Cancel is default for destructive actions)
+Theme.xaml                  Colour tokens and control styles (buttons, tabs, grids, ComboBox)
+Converters/                 Severity rules + brush/glyph/weight converters for the grids
 Models/                     Data models (ProcessEntry, StartupEntry, ServiceEntry, ItemCategory)
 Services/
   ProcessMonitor.cs         Process enumeration, CPU% sampling, kill/priority/suspend-resume
