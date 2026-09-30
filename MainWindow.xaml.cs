@@ -354,7 +354,7 @@ public partial class MainWindow : Window
     private void LaptopSaver_Click(object sender, RoutedEventArgs e)
     {
         var targets = _processes
-            .Where(p => !p.IsProtected && !ProtectedItems.IsInteractive(p.Name)
+            .Where(p => !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name)
                 && ItemClassifier.ClassifyStartup(p.Name, p.Name) is ItemCategory.Telemetry or ItemCategory.VendorDiag)
             .ToList();
         if (targets.Count == 0) { Log(Loc.Instance["Msg_SaverNone"]); return; }

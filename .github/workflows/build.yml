@@ -7,6 +7,10 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
+# The build only needs to read the repo; artifacts upload uses a separate service token.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest

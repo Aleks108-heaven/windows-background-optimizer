@@ -87,6 +87,23 @@ public class ProcessMonitor
         try { return p.PriorityClass.ToString(); } catch { return "N/A"; }
     }
 
+    /// <summary>
+    /// The grid row's name was captured up to a refresh tick ago; if that process exited and
+    /// Windows reused its PID for something else (worse: a critical process), acting on the PID
+    /// would hit the wrong target. Callers re-check the live name against the expected one and
+    /// against the protected list, using the process handle they are about to act on.
+    /// </summary>
+    private static ActionResult? CheckIdentity(Process proc, string expectedName)
+    {
+        string live;
+        try { live = proc.ProcessName; } catch { return new ActionResult(false, "Msg_ProcessChanged", expectedName, proc.Id); }
+        if (!string.Equals(live, expectedName, StringComparison.OrdinalIgnoreCase))
+            return new ActionResult(false, "Msg_ProcessChanged", expectedName, proc.Id);
+        if (ProtectedItems.IsProcessProtected(live))
+            return new ActionResult(false, "Msg_ProcessProtectedModify", expectedName);
+        return null;
+    }
+
     public static ActionResult Kill(int pid, string name)
     {
         if (ProtectedItems.IsProcessProtected(name))
@@ -94,6 +111,7 @@ public class ProcessMonitor
         try
         {
             using var proc = Process.GetProcessById(pid);
+            if (CheckIdentity(proc, name) is { } changed) return changed;
             proc.Kill();
             return new ActionResult(true, "Msg_Killed", name, pid);
         }
@@ -118,6 +136,7 @@ public class ProcessMonitor
         try
         {
             using var proc = Process.GetProcessById(pid);
+            if (CheckIdentity(proc, name) is { } changed) return changed;
             var before = proc.WorkingSet64;
             if (!EmptyWorkingSet(proc.Handle))
                 return new ActionResult(false, "Msg_TrimFailed", name, "access denied");
@@ -141,6 +160,7 @@ public class ProcessMonitor
         try
         {
             using var proc = Process.GetProcessById(pid);
+            if (CheckIdentity(proc, name) is { } changed) return changed;
             proc.PriorityClass = priority;
             return new ActionResult(true, "Msg_PriorityChanged", name, pid, priority);
         }
@@ -173,6 +193,7 @@ public class ProcessMonitor
         try
         {
             using var proc = Process.GetProcessById(pid);
+            if (CheckIdentity(proc, name) is { } changed) return changed;
             var status = NtSuspendProcess(proc.Handle);
             return status == 0
                 ? new ActionResult(true, "Msg_Suspended", name, pid)

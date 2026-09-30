@@ -26,7 +26,7 @@ internal class WorkloadOptimizer
         foreach (var p in processes)
         {
             seen.Add(p.Pid);
-            if (p.IsProtected || ProtectedItems.IsInteractive(p.Name) || p.Pid == foregroundPid)
+            if (p.IsProtected || ProtectedItems.IsInteractive(p.Name) || ProtectedItems.IsSecurityTool(p.Name) || p.Pid == foregroundPid)
             {
                 _idleStreaks[p.Pid] = 0;
                 continue;
@@ -42,7 +42,7 @@ internal class WorkloadOptimizer
     }
 
     private bool IsEligible(ProcessEntry p, int? foregroundPid) =>
-        !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && p.Pid != foregroundPid;
+        !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name) && p.Pid != foregroundPid;
 
     public List<ProcessEntry> GetIdleCandidates(IReadOnlyList<ProcessEntry> processes, int? foregroundPid, long minMemoryBytes = DefaultMinMemoryBytes) =>
         processes.Where(p => IsEligible(p, foregroundPid)
