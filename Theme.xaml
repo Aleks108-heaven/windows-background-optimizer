@@ -17,6 +17,8 @@
     <SolidColorBrush x:Key="AccentSolidBrush" Color="#2F6FE0"/>
     <SolidColorBrush x:Key="DangerBrush" Color="#EF5B5B"/>
     <SolidColorBrush x:Key="GoodBrush" Color="#35C98F"/>
+    <!-- Caution tone for options that can hurt responsiveness if misused (amber on the panel colour is ~9:1). -->
+    <SolidColorBrush x:Key="WarnBrush" Color="#F2B84B"/>
     <SolidColorBrush x:Key="DangerBgBrush" Color="#EF5B5B" Opacity="0.14"/>
     <SolidColorBrush x:Key="AccentBgBrush" Color="#4C8DFF" Opacity="0.14"/>
 
@@ -254,6 +256,21 @@
         <Setter Property="Padding" Value="10,6"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderSoftBrush}"/>
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    </Style>
+
+    <!-- Text cells: long values are cut with an ellipsis and the full text is available on hover -->
+    <Style x:Key="TrimTextCell" TargetType="TextBlock">
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+    </Style>
+
+    <!-- Checkbox cell that only displays state: changes are made with the toolbar buttons, so it must not look or act clickable -->
+    <Style x:Key="ReadOnlyCheckCell" TargetType="CheckBox">
+        <Setter Property="IsHitTestVisible" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <!-- Base row look shared by every grid: transparent background, hover tint, accent selection -->

@@ -48,8 +48,15 @@
                                 </ComboBox>
                                 <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click"/>
                                 <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                <CheckBox x:Name="AllowInteractiveThrottleCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottle]}" VerticalAlignment="Center" Margin="10,0,4,0"
-                                          ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottleHint]}"/>
+                                <!-- Caution styling: this override is what lets browsers/shell be slowed down (and can break Cloudflare checks) -->
+                                <CheckBox x:Name="AllowInteractiveThrottleCheck" VerticalAlignment="Center" Margin="10,0,4,0"
+                                          Foreground="{StaticResource WarnBrush}"
+                                          ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottleHint]}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#x26A0;" Foreground="{StaticResource WarnBrush}" Margin="0,0,5,0" FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AllowInteractiveThrottle]}" Foreground="{StaticResource WarnBrush}"/>
+                                    </StackPanel>
+                                </CheckBox>
                             </StackPanel>
                         </Border>
                         <!-- AI Workload Mode: unattended, RAM-pressure-driven -->
@@ -96,7 +103,7 @@
                     </StackPanel>
                     <DataGrid x:Name="ProcessGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Processes]}" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="220"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="220" ElementStyle="{StaticResource TrimTextCell}"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Pid]}" Binding="{Binding Pid}" Width="70"/>
                             <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_CpuPercent]}" SortMemberPath="CpuPercent" Width="90">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -183,11 +190,12 @@
                     </StackPanel>
                     <DataGrid x:Name="StartupGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Startup]}" Margin="0,8,0,0" RowStyle="{StaticResource BaseRowStyle}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="200"/>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Command]}" Binding="{Binding Command}" Width="360"/>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Source]}" Binding="{Binding SourceDisplay}" Width="150"/>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Category]}" Binding="{Binding CategoryDisplay}" Width="140"/>
-                            <DataGridCheckBoxColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Enabled]}" Binding="{Binding Enabled}" Width="80"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="200" ElementStyle="{StaticResource TrimTextCell}"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Command]}" Binding="{Binding Command}" Width="360" ElementStyle="{StaticResource TrimTextCell}"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Source]}" Binding="{Binding SourceDisplay}" Width="150" ElementStyle="{StaticResource TrimTextCell}"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Category]}" Binding="{Binding CategoryDisplay}" Width="140" ElementStyle="{StaticResource TrimTextCell}"/>
+                            <DataGridCheckBoxColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Enabled]}" Binding="{Binding Enabled}" Width="80"
+                                                    ElementStyle="{StaticResource ReadOnlyCheckCell}" EditingElementStyle="{StaticResource ReadOnlyCheckCell}"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -208,8 +216,8 @@
                     </StackPanel>
                     <DataGrid x:Name="ServiceGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Services]}" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_DisplayName]}" Binding="{Binding DisplayName}" Width="250"/>
-                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_ServiceName]}" Binding="{Binding Name}" Width="160"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_DisplayName]}" Binding="{Binding DisplayName}" Width="250" ElementStyle="{StaticResource TrimTextCell}"/>
+                            <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_ServiceName]}" Binding="{Binding Name}" Width="160" ElementStyle="{StaticResource TrimTextCell}"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Status]}" Binding="{Binding Status}" Width="90"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_StartType]}" Binding="{Binding StartType}" Width="90"/>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Category]}" Binding="{Binding CategoryDisplay}" Width="140"/>
