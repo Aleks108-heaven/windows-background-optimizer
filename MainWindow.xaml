@@ -82,22 +82,31 @@
                         </Border>
                     </WrapPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,8,0,4">
-                        <Border Width="220" Height="64" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
+                        <!-- Number on the left, sparkline on the right, so the line never runs through the figure -->
+                        <Border Width="260" Height="64" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
                             <Grid>
-                                <Canvas x:Name="CpuGraphCanvas" ClipToBounds="True"/>
-                                <StackPanel Margin="10,8,8,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="10,8,8,0">
                                     <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Cpu]}" Foreground="{StaticResource TextFaintBrush}" FontSize="11"/>
                                     <TextBlock x:Name="CpuUsageText" Text="--" FontSize="18" FontWeight="Bold"/>
                                 </StackPanel>
+                                <Canvas Grid.Column="1" x:Name="CpuGraphCanvas" ClipToBounds="True" Margin="0,8,8,8"/>
                             </Grid>
                         </Border>
-                        <Border Width="220" Height="64" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6">
+                        <Border Width="260" Height="64" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6">
                             <Grid>
-                                <Canvas x:Name="MemoryGraphCanvas" ClipToBounds="True"/>
-                                <StackPanel Margin="10,8,8,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="10,8,8,0">
                                     <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Memory]}" Foreground="{StaticResource TextFaintBrush}" FontSize="11"/>
                                     <TextBlock x:Name="MemoryUsageText" Text="--" FontSize="18" FontWeight="Bold"/>
                                 </StackPanel>
+                                <Canvas Grid.Column="1" x:Name="MemoryGraphCanvas" ClipToBounds="True" Margin="0,8,8,8"/>
                             </Grid>
                         </Border>
                     </StackPanel>
@@ -156,7 +165,7 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Status]}" Width="90">
+                            <DataGridTemplateColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Status]}" Width="*" MinWidth="150">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">

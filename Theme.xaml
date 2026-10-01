@@ -258,8 +258,31 @@
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
     </Style>
 
+    <!--
+        Cells: the stock style paints a selected/focused cell white with its own border, which clashed with the
+        dark theme (the row already shows the selection). This one is transparent, has no focus box, and
+        centres every column's content vertically so text columns line up with the template columns.
+        Foreground is deliberately not set so a row's dimmed (protected) colour is inherited.
+    -->
+    <Style TargetType="DataGridCell">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="8,0"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridCell">
+                    <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <ContentPresenter VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Text cells: long values are cut with an ellipsis and the full text is available on hover -->
     <Style x:Key="TrimTextCell" TargetType="TextBlock">
+        <Setter Property="Margin" Value="2,0"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     </Style>
