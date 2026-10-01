@@ -99,7 +99,7 @@ public class BatteryManager
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("powercfg", args)
+            using var p = Process.Start(new ProcessStartInfo(SystemTools.Path("powercfg.exe"), args)
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,

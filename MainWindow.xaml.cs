@@ -23,14 +23,17 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ServiceEntry> _services = new();
 
     private readonly Dictionary<string, ProcessPriorityClass> _enforcedPriorities = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<int> _enforceGaveUp = new();
     private readonly DispatcherTimer _refreshTimer;
     private System.Windows.Forms.NotifyIcon? _trayIcon;
 
     // AI Workload Mode: pid -> priority to restore once RAM pressure clears. Kept separate
     // from _enforcedPriorities (the manual "persist across restarts" feature) so the two
     // never fight each other or reapply each other's changes.
-    private readonly Dictionary<int, ProcessPriorityClass> _autoThrottled = new();
-    private readonly HashSet<int> _autoSuspended = new();
+    // Names are kept next to the PIDs so a restore/resume can verify it is still talking to the
+    // same process after a PID has been recycled.
+    private readonly Dictionary<int, (string Name, ProcessPriorityClass Priority)> _autoThrottled = new();
+    private readonly Dictionary<int, string> _autoSuspended = new();
     private const long BytesPerGb = 1024L * 1024 * 1024;
     private const long HysteresisBytes = 500L * 1024 * 1024;
 
@@ -223,7 +226,14 @@ public partial class MainWindow : Window
                 Hide();
         };
 
-        Closed += (_, _) => _trayIcon.Dispose();
+        // Only this app can undo what Auto-Optimize did: a process it froze stays frozen (and one it
+        // throttled stays throttled) after exit unless it is released here.
+        Closed += (_, _) =>
+        {
+            _refreshTimer.Stop();
+            RestoreAutoThrottled();
+            _trayIcon.Dispose();
+        };
     }
 
     private void RestoreFromTray()
@@ -266,15 +276,26 @@ public partial class MainWindow : Window
         {
             foreach (var p in fresh)
             {
-                if (!p.IsProtected && _enforcedPriorities.TryGetValue(p.Name, out var wanted)
+                // One attempt per process: if it can't be changed (access denied, priority capped)
+                // retrying every 2s would just repeat the same failure, so it is logged once instead.
+                if (!p.IsProtected && !_enforceGaveUp.Contains(p.Pid)
+                    && _enforcedPriorities.TryGetValue(p.Name, out var wanted)
                     && p.Priority != wanted.ToString())
-                    // allowInteractiveThrottle: true - persisting this rule already required the
-                    // user to explicitly opt in via the checkbox at the time it was applied.
-                    ProcessMonitor.SetPriority(p.Pid, p.Name, wanted, allowInteractiveThrottle: true);
+                {
+                    // The interactive guard stays on: a rule is only stored after PriorityPersistence
+                    // accepted it, and that never accepts Idle/BelowNormal for interactive apps.
+                    var applied = ProcessMonitor.SetPriority(p.Pid, p.Name, wanted);
+                    if (!applied.Ok)
+                    {
+                        _enforceGaveUp.Add(p.Pid);
+                        Log(applied);
+                    }
+                }
             }
         }
         var freshPids = new HashSet<int>(fresh.Count);
         foreach (var p in fresh) freshPids.Add(p.Pid);
+        _enforceGaveUp.RemoveWhere(pid => !freshPids.Contains(pid));
 
         for (var i = _processes.Count - 1; i >= 0; i--)
         {
@@ -290,7 +311,12 @@ public partial class MainWindow : Window
                 : IndexOfPid(_processes, entry.Pid);
 
             if (currentIndex == -1) _processes.Insert(Math.Min(i, _processes.Count), entry);
-            else if (currentIndex != i) _processes.Move(currentIndex, i);
+            else
+            {
+                if (currentIndex != i) _processes.Move(currentIndex, i);
+                // Same PID but a different instance means the PID was recycled by a new process.
+                if (!ReferenceEquals(_processes[i], entry)) _processes[i] = entry;
+            }
         }
     }
 
@@ -392,6 +418,7 @@ public partial class MainWindow : Window
         var priorityName = (PriorityCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "Normal";
         if (!Enum.TryParse<ProcessPriorityClass>(priorityName, out var priority)) return;
 
+        _enforceGaveUp.Clear(); // a new manual apply deserves a fresh attempt on every instance
         var persist = PersistPriorityCheck.IsChecked == true;
         var allowInteractive = AllowInteractiveThrottleCheck.IsChecked == true;
         foreach (var entry in selected)
@@ -403,10 +430,14 @@ public partial class MainWindow : Window
             // Sync the persistent IFEO rule to the checkbox state: checked writes
             // it, unchecked clears whatever rule (if any) was there before, so
             // toggling the box off and re-applying is how you undo persistence.
+            // Only a rule the persistence layer actually accepted is re-applied by the refresh
+            // loop; a refused one (e.g. Idle on a browser) must not be enforced behind its back.
             if (persist)
             {
-                _enforcedPriorities[entry.Name] = priority;
-                Log(PriorityPersistence.SetPersistent(entry.Name, priority));
+                var persisted = PriorityPersistence.SetPersistent(entry.Name, priority);
+                Log(persisted);
+                if (persisted.Ok) _enforcedPriorities[entry.Name] = priority;
+                else _enforcedPriorities.Remove(entry.Name);
             }
             else
             {
@@ -424,13 +455,16 @@ public partial class MainWindow : Window
     // is focused, and only ever uses BelowNormal — never Idle, which is what broke Turnstile.
     private void AutoOptimizeTick()
     {
-        var foregroundPid = ForegroundWindow.GetForegroundPid();
+        var foregroundOwners = ForegroundWindow.GetForegroundPids();
+        // Everything that belongs to the app being used (helpers, Store-app process) is exempt.
+        var foreground = WorkloadOptimizer.ExpandForeground(_processes, foregroundOwners);
         foreach (var p in _processes)
         {
-            p.IsForeground = p.Pid == foregroundPid;
-            p.IsSuspended = _autoSuspended.Contains(p.Pid);
+            p.IsForeground = foregroundOwners.Contains(p.Pid);
+            p.IsSuspended = _autoSuspended.ContainsKey(p.Pid);
         }
-        _workloadOptimizer.UpdateStreaks(_processes, foregroundPid);
+        _workloadOptimizer.UpdateStreaks(_processes, foreground);
+        ReleaseForeground(foreground);
 
         if (AutoOptimizeCheck.IsChecked != true)
         {
@@ -438,7 +472,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!double.TryParse(AutoOptimizeThresholdBox.Text, out var thresholdGb) || thresholdGb <= 0) thresholdGb = 2;
+        // Invariant parsing (accepting a comma too): with the current culture "2.5" reads as 25 in
+        // locales where "." is the thousands separator, which would keep throttling permanently on.
+        if (!double.TryParse(AutoOptimizeThresholdBox.Text.Trim().Replace(',', '.'),
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+                out var thresholdGb) || thresholdGb <= 0) thresholdGb = 2;
         var thresholdBytes = (long)(thresholdGb * BytesPerGb);
 
         var stats = _systemStats.Sample();
@@ -446,7 +484,7 @@ public partial class MainWindow : Window
 
         if (freeBytes < thresholdBytes)
         {
-            foreach (var entry in _workloadOptimizer.GetIdleCandidates(_processes, foregroundPid))
+            foreach (var entry in _workloadOptimizer.GetIdleCandidates(_processes, foreground))
             {
                 if (_autoThrottled.ContainsKey(entry.Pid)) continue;
                 if (!Enum.TryParse<ProcessPriorityClass>(entry.Priority, out var original)) continue;
@@ -455,14 +493,14 @@ public partial class MainWindow : Window
                 var result = ProcessMonitor.SetPriority(entry.Pid, entry.Name, ProcessPriorityClass.BelowNormal);
                 if (result.Ok)
                 {
-                    _autoThrottled[entry.Pid] = original;
+                    _autoThrottled[entry.Pid] = (entry.Name, original);
                     Log(Loc.Instance.Format("Msg_AutoThrottled", entry.Name, entry.Pid));
                 }
             }
 
             if (AllowSuspendCheck.IsChecked == true)
             {
-                var longIdle = _workloadOptimizer.GetLongIdleCandidates(_processes, foregroundPid);
+                var longIdle = _workloadOptimizer.GetLongIdleCandidates(_processes, foreground);
                 if (longIdle.Count > 0 && !_autoSuspendConsentGiven)
                 {
                     if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_AutoSuspendTitle"], Loc.Instance["Dlg_AutoSuspendMessage"],
@@ -479,11 +517,11 @@ public partial class MainWindow : Window
 
                 foreach (var entry in longIdle)
                 {
-                    if (_autoSuspended.Contains(entry.Pid)) continue;
+                    if (_autoSuspended.ContainsKey(entry.Pid)) continue;
                     var result = ProcessMonitor.SuspendProcess(entry.Pid, entry.Name);
                     if (result.Ok)
                     {
-                        _autoSuspended.Add(entry.Pid);
+                        _autoSuspended[entry.Pid] = entry.Name;
                         entry.IsSuspended = true;
                         Log(result);
                     }
@@ -502,11 +540,8 @@ public partial class MainWindow : Window
 
     private void RestoreAutoThrottled()
     {
-        foreach (var (pid, priority) in _autoThrottled)
-        {
-            var entry = _processes.FirstOrDefault(p => p.Pid == pid);
-            if (entry != null) ProcessMonitor.SetPriority(pid, entry.Name, priority);
-        }
+        foreach (var (pid, (name, priority)) in _autoThrottled)
+            ProcessMonitor.SetPriority(pid, name, priority);
         if (_autoThrottled.Count > 0) Log(Loc.Instance.Format("Msg_AutoRestored", _autoThrottled.Count));
         _autoThrottled.Clear();
 
@@ -515,16 +550,41 @@ public partial class MainWindow : Window
 
     private void ResumeAutoSuspended()
     {
-        foreach (var pid in _autoSuspended.ToList())
-        {
-            var entry = _processes.FirstOrDefault(p => p.Pid == pid);
-            var name = entry?.Name ?? "process";
-            var result = ProcessMonitor.ResumeProcess(pid, name);
-            if (result.Ok) Log(result);
-            if (entry != null) entry.IsSuspended = false;
-        }
+        foreach (var (pid, name) in _autoSuspended.ToList())
+            ResumeOne(pid, name);
         _autoSuspended.Clear();
         SuspendedCountText.Text = "";
+    }
+
+    private void ResumeOne(int pid, string name)
+    {
+        var result = ProcessMonitor.ResumeProcess(pid, name);
+        if (result.Ok) Log(result);
+        var entry = _processes.FirstOrDefault(p => p.Pid == pid);
+        if (entry != null) entry.IsSuspended = false;
+    }
+
+    // Auto-Optimize must never keep holding the app the user just switched to: anything it froze
+    // or slowed that now belongs to the foreground is released immediately, not when RAM recovers.
+    private void ReleaseForeground(HashSet<int> foreground)
+    {
+        var resumed = _autoSuspended.Keys.Where(foreground.Contains).ToList();
+        foreach (var pid in resumed)
+        {
+            ResumeOne(pid, _autoSuspended[pid]);
+            _autoSuspended.Remove(pid);
+        }
+        if (resumed.Count > 0)
+            SuspendedCountText.Text = _autoSuspended.Count > 0
+                ? Loc.Instance.Format("Lbl_SuspendedCount", _autoSuspended.Count)
+                : "";
+
+        foreach (var pid in _autoThrottled.Keys.Where(foreground.Contains).ToList())
+        {
+            var (name, priority) = _autoThrottled[pid];
+            ProcessMonitor.SetPriority(pid, name, priority);
+            _autoThrottled.Remove(pid);
+        }
     }
 
     private void ResumeAllSuspended_Click(object sender, RoutedEventArgs e) => ResumeAutoSuspended();

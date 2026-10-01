@@ -26,6 +26,14 @@ public class ProcessMonitor
                 {
                     seenPids.Add(proc.Id);
 
+                    var startTime = SafeStartTime(proc);
+                    // A PID that exited and was reused between two ticks must not inherit the old
+                    // entry's name, protected flag or CPU baseline: treat it as a brand-new process.
+                    if (_tracked.TryGetValue(proc.Id, out var existing)
+                        && (!string.Equals(existing.Name, proc.ProcessName, StringComparison.OrdinalIgnoreCase)
+                            || (existing.StartTime != default && startTime != default && existing.StartTime != startTime)))
+                        _tracked.Remove(proc.Id);
+
                     if (!_tracked.TryGetValue(proc.Id, out var entry))
                     {
                         entry = new ProcessEntry
@@ -33,6 +41,7 @@ public class ProcessMonitor
                             Pid = proc.Id,
                             Name = proc.ProcessName,
                             IsProtected = ProtectedItems.IsProcessProtected(proc.ProcessName),
+                            StartTime = startTime,
                             LastCpuTime = SafeCpuTime(proc),
                             LastSampleTime = now,
                         };
@@ -42,12 +51,21 @@ public class ProcessMonitor
                     {
                         var currentCpuTime = SafeCpuTime(proc);
                         var elapsedWall = (now - entry.LastSampleTime).TotalMilliseconds;
-                        if (elapsedWall > 0)
+                        if (currentCpuTime is { } current && entry.LastCpuTime is { } previous && elapsedWall > 0)
                         {
-                            var cpuDeltaMs = (currentCpuTime - entry.LastCpuTime).TotalMilliseconds;
+                            var cpuDeltaMs = (current - previous).TotalMilliseconds;
                             entry.CpuPercent = Math.Max(0, Math.Min(100, cpuDeltaMs / elapsedWall / _processorCount * 100));
+                            entry.CpuKnown = true;
                         }
-                        entry.LastCpuTime = currentCpuTime;
+                        else if (currentCpuTime is null)
+                        {
+                            // Unreadable (access denied): report unknown instead of a fake 0%.
+                            entry.CpuPercent = 0;
+                            entry.CpuKnown = false;
+                        }
+                        // Only advance the baseline on a real reading, so one failed read can't
+                        // turn the next good one into a bogus 100% spike.
+                        if (currentCpuTime is not null) entry.LastCpuTime = currentCpuTime;
                         entry.LastSampleTime = now;
                     }
 
@@ -72,9 +90,14 @@ public class ProcessMonitor
         return _tracked.Values.OrderBy(p => p.Pid).ToList();
     }
 
-    private static TimeSpan SafeCpuTime(Process p)
+    private static TimeSpan? SafeCpuTime(Process p)
     {
-        try { return p.TotalProcessorTime; } catch { return TimeSpan.Zero; }
+        try { return p.TotalProcessorTime; } catch { return null; }
+    }
+
+    private static DateTime SafeStartTime(Process p)
+    {
+        try { return p.StartTime; } catch { return default; }
     }
 
     private static long SafeWorkingSet(Process p)
@@ -210,6 +233,10 @@ public class ProcessMonitor
         try
         {
             using var proc = Process.GetProcessById(pid);
+            // Same recycled-PID guard as the other actions (name only: resuming a process that is
+            // on the protected list is harmless, so CheckIdentity's protected check is skipped).
+            if (!string.Equals(proc.ProcessName, name, StringComparison.OrdinalIgnoreCase))
+                return new ActionResult(false, "Msg_ProcessChanged", name, pid);
             var status = NtResumeProcess(proc.Handle);
             return status == 0
                 ? new ActionResult(true, "Msg_Resumed", name, pid)

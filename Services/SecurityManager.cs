@@ -63,13 +63,23 @@ public class SecurityManager
             throw new InvalidOperationException($"{method} returned code {code}");
     }
 
-    public bool IsSmbBlocked() => RunNetsh($"advfirewall firewall show rule name=\"{SmbRuleName}\"") == 0;
+    // netsh exits with 1 when "show"/"delete" finds no rule of that name (it is not a failure),
+    // and its message is localized, so the exit code of a "show" is the reliable existence test.
+    private static bool RuleExists(string ruleName) =>
+        RunNetsh("advfirewall", "firewall", "show", "rule", $"name={ruleName}") == 0;
+
+    public bool IsSmbBlocked() => RuleExists(SmbRuleName);
 
     public ActionResult SetSmbBlocked(bool blocked)
     {
+        // Unblocking when our rule is already gone (removed by the script, by hand, or never added)
+        // is the desired end state, not an error.
+        if (!blocked && !RuleExists(SmbRuleName))
+            return new ActionResult(true, "Msg_SmbUnblocked");
+
         var code = blocked
-            ? RunNetsh($"advfirewall firewall add rule name=\"{SmbRuleName}\" dir=in action=block protocol=TCP localport=139,445 profile=any")
-            : RunNetsh($"advfirewall firewall delete rule name=\"{SmbRuleName}\"");
+            ? RunNetsh("advfirewall", "firewall", "add", "rule", $"name={SmbRuleName}", "dir=in", "action=block", "protocol=TCP", "localport=139,445", "profile=any")
+            : RunNetsh("advfirewall", "firewall", "delete", "rule", $"name={SmbRuleName}");
         return code == 0
             ? new ActionResult(true, blocked ? "Msg_SmbBlocked" : "Msg_SmbUnblocked")
             : new ActionResult(false, "Msg_SecurityFailed", "SMB", $"netsh exit code {code}");
@@ -83,10 +93,12 @@ public class SecurityManager
         var result = new List<string>();
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("netsh", "advfirewall firewall show rule name=all dir=out")
+            var psi = new ProcessStartInfo(SystemTools.Path("netsh.exe"))
             {
                 CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true,
-            })!;
+            };
+            foreach (var a in new[] { "advfirewall", "firewall", "show", "rule", "name=all", "dir=out" }) psi.ArgumentList.Add(a);
+            using var p = Process.Start(psi)!;
             var output = p.StandardOutput.ReadToEnd();
             p.WaitForExit(10000);
             foreach (var line in output.Split('\n'))
@@ -115,9 +127,12 @@ public class SecurityManager
         }
 
         var rule = AppRulePrefix + exePath;
+        if (!blocked && !RuleExists(rule))
+            return new ActionResult(true, "Msg_AppUnblocked", name);
+
         var code = blocked
-            ? RunNetsh($"advfirewall firewall add rule name=\"{rule}\" dir=out action=block program=\"{exePath}\" enable=yes profile=any")
-            : RunNetsh($"advfirewall firewall delete rule name=\"{rule}\"");
+            ? RunNetsh("advfirewall", "firewall", "add", "rule", $"name={rule}", "dir=out", "action=block", $"program={exePath}", "enable=yes", "profile=any")
+            : RunNetsh("advfirewall", "firewall", "delete", "rule", $"name={rule}");
         return code == 0
             ? new ActionResult(true, blocked ? "Msg_AppBlocked" : "Msg_AppUnblocked", name)
             : new ActionResult(false, "Msg_SecurityFailed", name, $"netsh exit code {code}");
@@ -137,17 +152,21 @@ public class SecurityManager
         catch { return null; }
     }
 
-    private static int RunNetsh(string args)
+    // Arguments are passed as a list (never concatenated into one string), so a quote or space in a
+    // rule name or program path can't be reinterpreted by netsh as extra parameters.
+    private static int RunNetsh(params string[] args)
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("netsh", args)
+            var psi = new ProcessStartInfo(SystemTools.Path("netsh.exe"))
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-            })!;
+            };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            using var p = Process.Start(psi)!;
             p.StandardOutput.ReadToEnd();
             p.WaitForExit(10000);
             return p.ExitCode;

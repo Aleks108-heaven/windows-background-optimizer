@@ -19,19 +19,39 @@ internal class WorkloadOptimizer
 
     private readonly Dictionary<int, int> _idleStreaks = new();
 
+    /// <summary>
+    /// The window the user is using is rarely one process: Electron apps put the UI in
+    /// renderer/GPU helpers that share the exe name, and Store apps run behind a frame host.
+    /// So the exemption covers every process that owns a foreground window plus every other
+    /// process with the same exe name as one of them.
+    /// </summary>
+    public static HashSet<int> ExpandForeground(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foregroundPids)
+    {
+        var result = new HashSet<int>(foregroundPids);
+        if (foregroundPids.Count == 0) return result;
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in processes)
+            if (foregroundPids.Contains(p.Pid)) names.Add(p.Name);
+        foreach (var p in processes)
+            if (names.Contains(p.Name)) result.Add(p.Pid);
+        return result;
+    }
+
     /// <summary>Call once per refresh tick before reading candidates, so streaks reflect the latest sample.</summary>
-    public void UpdateStreaks(IReadOnlyList<ProcessEntry> processes, int? foregroundPid)
+    public void UpdateStreaks(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground)
     {
         var seen = new HashSet<int>(processes.Count);
         foreach (var p in processes)
         {
             seen.Add(p.Pid);
-            if (p.IsProtected || ProtectedItems.IsInteractive(p.Name) || ProtectedItems.IsSecurityTool(p.Name) || p.Pid == foregroundPid)
+            if (!IsEligible(p, foreground))
             {
                 _idleStreaks[p.Pid] = 0;
                 continue;
             }
-            _idleStreaks[p.Pid] = p.CpuPercent <= IdleCpuThreshold
+            // Unknown CPU (unreadable, or not yet sampled twice) is never evidence of idleness.
+            _idleStreaks[p.Pid] = p.CpuKnown && p.CpuPercent <= IdleCpuThreshold
                 ? _idleStreaks.GetValueOrDefault(p.Pid) + 1
                 : 0;
         }
@@ -41,17 +61,17 @@ internal class WorkloadOptimizer
             _idleStreaks.Remove(pid);
     }
 
-    private bool IsEligible(ProcessEntry p, int? foregroundPid) =>
-        !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name) && p.Pid != foregroundPid;
+    private static bool IsEligible(ProcessEntry p, IReadOnlySet<int> foreground) =>
+        !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name) && !foreground.Contains(p.Pid);
 
-    public List<ProcessEntry> GetIdleCandidates(IReadOnlyList<ProcessEntry> processes, int? foregroundPid, long minMemoryBytes = DefaultMinMemoryBytes) =>
-        processes.Where(p => IsEligible(p, foregroundPid)
+    public List<ProcessEntry> GetIdleCandidates(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground, long minMemoryBytes = DefaultMinMemoryBytes) =>
+        processes.Where(p => IsEligible(p, foreground)
             && p.MemoryBytes >= minMemoryBytes
             && _idleStreaks.GetValueOrDefault(p.Pid) >= ShortIdleSamples)
             .ToList();
 
-    public List<ProcessEntry> GetLongIdleCandidates(IReadOnlyList<ProcessEntry> processes, int? foregroundPid, long minMemoryBytes = DefaultMinMemoryBytes) =>
-        processes.Where(p => IsEligible(p, foregroundPid)
+    public List<ProcessEntry> GetLongIdleCandidates(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground, long minMemoryBytes = DefaultMinMemoryBytes) =>
+        processes.Where(p => IsEligible(p, foreground)
             && p.MemoryBytes >= minMemoryBytes
             && _idleStreaks.GetValueOrDefault(p.Pid) >= LongIdleSamples)
             .ToList();

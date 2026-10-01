@@ -50,7 +50,13 @@ public class ProcessEntry : INotifyPropertyChanged
         set { _isSuspended = value; OnChanged(nameof(IsSuspended)); }
     }
 
-    internal TimeSpan LastCpuTime;
+    // Used to detect a recycled PID: same PID but a different start time means a different process.
+    internal DateTime StartTime;
+    // Null when the process's CPU time can't be read (access denied); distinct from "0% busy".
+    internal TimeSpan? LastCpuTime;
+
+    // False while CPU usage is unknown, so idle-detection never mistakes "can't measure" for "idle".
+    internal bool CpuKnown { get; set; }
     internal DateTime LastSampleTime;
 
     public event PropertyChangedEventHandler? PropertyChanged;

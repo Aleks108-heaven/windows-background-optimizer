@@ -10,7 +10,7 @@ internal static class ProtectedItems
     public static readonly HashSet<string> ProtectedProcessNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "System", "System Idle Process", "Registry", "Secure System",
-        "smss", "csrss", "wininit", "winlogon", "services", "lsass",
+        "Idle", "Memory Compression", "smss", "csrss", "wininit", "winlogon", "services", "lsass",
         "svchost", "dwm", "fontdrvhost", "sihost", "explorer",
         "taskhostw", "ctfmon", "conhost", "dllhost", "spoolsv",
         "audiodg", "WUDFHost", "RuntimeBroker", "WmiPrvSE",

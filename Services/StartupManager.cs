@@ -185,7 +185,7 @@ public class StartupManager
 
     private static ActionResult SetScheduledTaskEnabled(StartupEntry entry, bool enabled)
     {
-        var psi = new ProcessStartInfo("schtasks.exe")
+        var psi = new ProcessStartInfo(SystemTools.Path("schtasks.exe"))
         {
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -210,7 +210,7 @@ public class StartupManager
 
     private static string? RunSchtasks(params string[] args)
     {
-        var psi = new ProcessStartInfo("schtasks.exe")
+        var psi = new ProcessStartInfo(SystemTools.Path("schtasks.exe"))
         {
             RedirectStandardOutput = true,
             UseShellExecute = false,
