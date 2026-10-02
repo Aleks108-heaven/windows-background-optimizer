@@ -278,17 +278,19 @@ public partial class MainWindow : Window
             {
                 // One attempt per process: if it can't be changed (access denied, priority capped)
                 // retrying every 2s would just repeat the same failure, so it is logged once instead.
-                if (!p.IsProtected && !_enforceGaveUp.Contains(p.Pid)
+                // Browsers manage their own helper priorities (background tabs go Idle on purpose) and
+                // their short-lived helpers; Windows already applies the persisted rule at launch, so
+                // fighting them here only adds churn.
+                if (!p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !_enforceGaveUp.Contains(p.Pid)
                     && _enforcedPriorities.TryGetValue(p.Name, out var wanted)
                     && p.Priority != wanted.ToString())
                 {
-                    // The interactive guard stays on: a rule is only stored after PriorityPersistence
-                    // accepted it, and that never accepts Idle/BelowNormal for interactive apps.
                     var applied = ProcessMonitor.SetPriority(p.Pid, p.Name, wanted);
                     if (!applied.Ok)
                     {
                         _enforceGaveUp.Add(p.Pid);
-                        Log(applied);
+                        // A helper that exited between the refresh and this call is not an error worth logging.
+                        if (ProcessMonitor.IsRunning(p.Pid)) Log(applied);
                     }
                 }
             }

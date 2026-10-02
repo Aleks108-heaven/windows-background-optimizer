@@ -127,6 +127,12 @@ public class ProcessMonitor
         return null;
     }
 
+    public static bool IsRunning(int pid)
+    {
+        try { using var p = Process.GetProcessById(pid); return !p.HasExited; }
+        catch { return false; }
+    }
+
     public static ActionResult Kill(int pid, string name)
     {
         if (ProtectedItems.IsProcessProtected(name))
