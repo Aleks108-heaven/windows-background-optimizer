@@ -3,17 +3,20 @@ using System.Windows;
 using System.Windows.Markup;
 using System.Windows.Media;
 using Xunit;
-using Color = System.Windows.Media.Color;
-using Colors = System.Windows.Media.Colors;
 
 namespace BgOptimizer.Tests;
 
 /// <summary>Loads the real Theme.xaml and checks WCAG contrast for the colour pairs the UI actually uses.</summary>
 public class ThemeContrastTests
 {
-    private static ResourceDictionary LoadTheme()
+    private record Swatch(byte R, byte G, byte B, double Opacity);
+
+    private sealed record ThemeData(Dictionary<string, Swatch> Brushes, HashSet<string> Keys);
+
+    // WPF objects belong to the thread that created them, so everything is copied into plain values there.
+    private static ThemeData LoadTheme()
     {
-        ResourceDictionary? dict = null;
+        ThemeData? data = null;
         Exception? error = null;
         var t = new Thread(() =>
         {
@@ -22,36 +25,44 @@ public class ThemeContrastTests
                 // Outside the app, the converters' clr-namespace needs the assembly spelled out.
                 var xaml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Theme.xaml"))
                     .Replace("clr-namespace:BgOptimizer.Converters\"", "clr-namespace:BgOptimizer.Converters;assembly=BgOptimizer\"");
-                dict = (ResourceDictionary)XamlReader.Parse(xaml);
+                var dict = (ResourceDictionary)XamlReader.Parse(xaml);
+                var brushes = new Dictionary<string, Swatch>();
+                var keys = new HashSet<string>();
+                foreach (var k in dict.Keys)
+                {
+                    keys.Add(k.ToString()!);
+                    if (dict[k] is SolidColorBrush b)
+                        brushes[k.ToString()!] = new Swatch(b.Color.R, b.Color.G, b.Color.B, b.Opacity);
+                }
+                data = new ThemeData(brushes, keys);
             }
             catch (Exception ex) { error = ex; }
         });
         t.SetApartmentState(ApartmentState.STA);
         t.Start(); t.Join();
         if (error != null) throw error;
-        return dict!;
+        return data!;
     }
 
-    private static readonly ResourceDictionary Theme = LoadTheme();
+    private static readonly ThemeData Theme = LoadTheme();
 
-    private static Color C(string key) => ((SolidColorBrush)Theme[key]).Color;
+    private static Swatch C(string key) => Theme.Brushes[key];
 
     /// <summary>Colour as seen over a base: brush Opacity is composited onto the base.</summary>
-    private static Color Over(string key, string baseKey)
+    private static Swatch Over(string key, string baseKey)
     {
-        var b = (SolidColorBrush)Theme[key];
-        var bg = C(baseKey);
+        var b = Theme.Brushes[key];
+        var bg = Theme.Brushes[baseKey];
         double a = b.Opacity;
-        return Color.FromRgb((byte)(b.Color.R * a + bg.R * (1 - a)), (byte)(b.Color.G * a + bg.G * (1 - a)), (byte)(b.Color.B * a + bg.B * (1 - a)));
+        return new Swatch((byte)(b.R * a + bg.R * (1 - a)), (byte)(b.G * a + bg.G * (1 - a)), (byte)(b.B * a + bg.B * (1 - a)), 1);
     }
-
-    private static double Lum(Color c)
+    private static double Lum(Swatch c)
     {
         static double Lin(byte v) { var s = v / 255.0; return s <= 0.03928 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4); }
         return 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
     }
 
-    private static double Ratio(Color a, Color b)
+    private static double Ratio(Swatch a, Swatch b)
     {
         var x = Lum(a); var y = Lum(b);
         return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
@@ -62,8 +73,8 @@ public class ThemeContrastTests
     {
         foreach (var k in new[] { "BgBrush", "PanelBrush", "Panel2Brush", "TextBrush", "TextDimBrush", "TextFaintBrush",
                      "AccentBrush", "WarnBrush", "DangerBrush", "DangerTextBrush", "ControlBorderBrush", "FocusBrush" })
-            Assert.True(Theme.Contains(k), k);
-        Assert.True(Theme.Contains("FocusRing"));
+            Assert.Contains(k, Theme.Keys);
+        Assert.Contains("FocusRing", Theme.Keys);
     }
 
     [Theory]
@@ -97,7 +108,7 @@ public class ThemeContrastTests
 
     [Fact]
     public void PrimaryButtonTextMeetsAA() =>
-        Assert.True(Ratio(Colors.White, C("AccentSolidBrush")) >= 4.5);
+        Assert.True(Ratio(new Swatch(255, 255, 255, 1), C("AccentSolidBrush")) >= 4.5);
 
     [Theory]
     [InlineData("PanelBrush")]
@@ -109,5 +120,7 @@ public class ThemeContrastTests
         Assert.True(Ratio(C("FocusBrush"), C(surface)) >= 3.0, $"focus on {surface}");
     }
 }
+
+
 
 
