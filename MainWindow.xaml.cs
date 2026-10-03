@@ -147,15 +147,18 @@ public partial class MainWindow : Window
             new System.Windows.Point(0, height),
         };
 
+        // Accent comes from Theme.xaml so the graphs follow the palette.
+        var accent = (Application.Current.TryFindResource("AccentBrush") as System.Windows.Media.SolidColorBrush)?.Color
+                     ?? System.Windows.Media.Color.FromRgb(76, 141, 255);
         canvas.Children.Add(new System.Windows.Shapes.Polygon
         {
             Points = fillPoints,
-            Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(70, 76, 141, 255)),
+            Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(70, accent.R, accent.G, accent.B)),
         });
         canvas.Children.Add(new System.Windows.Shapes.Polyline
         {
             Points = linePoints,
-            Stroke = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 141, 255)),
+            Stroke = new System.Windows.Media.SolidColorBrush(accent),
             StrokeThickness = 1.5,
         });
     }
@@ -250,10 +253,24 @@ public partial class MainWindow : Window
         return new System.Drawing.Icon(stream);
     }
 
-    private void Log(string message) =>
-        LogList.Items.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {message}");
+    // The log is a long-lived tray app's only record, so it is capped; and failures get a glyph plus
+    // the danger colour (not colour alone) so they can't be mistaken for successes.
+    private const int MaxLogEntries = 500;
 
-    private void Log(ActionResult result) => Log(result.Message);
+    private void Log(string message) => AddLog(message, failed: false);
+
+    private void Log(ActionResult result) => AddLog(result.Message, failed: !result.Ok);
+
+    private void AddLog(string message, bool failed)
+    {
+        var item = new System.Windows.Controls.ListBoxItem
+        {
+            Content = $"[{DateTime.Now:HH:mm:ss}] {(failed ? "✖ " : "")}{message}",
+        };
+        if (failed) item.Foreground = (System.Windows.Media.Brush)FindResource("DangerBrush");
+        LogList.Items.Insert(0, item);
+        while (LogList.Items.Count > MaxLogEntries) LogList.Items.RemoveAt(LogList.Items.Count - 1);
+    }
 
     private void ClearLog_Click(object sender, RoutedEventArgs e) => LogList.Items.Clear();
 
@@ -610,10 +627,22 @@ public partial class MainWindow : Window
 
     // ---------- Startup ----------
 
-    private void RefreshStartup()
+    // Enumerating startup items (registry, folders, Task Scheduler) is slow, so it runs on a worker
+    // thread and only the collection update happens on the UI thread. A newer request supersedes an
+    // older one still in flight, so a slow earlier result can never overwrite a fresher list.
+    private int _startupLoadId;
+
+    private async void RefreshStartup()
     {
-        _startupItems.Clear();
-        foreach (var s in _startupManager.GetAll()) _startupItems.Add(s);
+        var id = ++_startupLoadId;
+        try
+        {
+            var items = await Task.Run(() => _startupManager.GetAll());
+            if (id != _startupLoadId) return;
+            _startupItems.Clear();
+            foreach (var s in items) _startupItems.Add(s);
+        }
+        catch (Exception ex) { Log(ex.Message); }
     }
 
     private void RefreshStartup_Click(object sender, RoutedEventArgs e) => RefreshStartup();
@@ -847,10 +876,19 @@ public partial class MainWindow : Window
 
     // ---------- Services ----------
 
-    private void RefreshServices()
+    private int _servicesLoadId;
+
+    private async void RefreshServices()
     {
-        _services.Clear();
-        foreach (var s in _svcManager.GetAll()) _services.Add(s);
+        var id = ++_servicesLoadId;
+        try
+        {
+            var items = await Task.Run(() => _svcManager.GetAll());
+            if (id != _servicesLoadId) return;
+            _services.Clear();
+            foreach (var s in items) _services.Add(s);
+        }
+        catch (Exception ex) { Log(ex.Message); }
     }
 
     private void RefreshServices_Click(object sender, RoutedEventArgs e) => RefreshServices();

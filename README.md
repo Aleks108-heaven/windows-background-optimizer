@@ -124,6 +124,14 @@ dotnet run
 
 Or run the compiled executable directly: `bin/Debug/net10.0-windows/BgOptimizer.exe`.
 
+## Tests
+
+```bash
+dotnet test tests/BgOptimizer.Tests
+```
+
+xUnit tests cover the safety rules (protected / interactive / security-tool lists, the live-identity check on kill, priority, suspend and resume, firewall-block refusals), the idle-detection logic, the Category classifier, and the parsers for `powercfg` output and firewall rules (checked with non-English labels). Tests that act on a process only ever touch a `ping.exe` child they start themselves; nothing changes system settings. CI runs them on every push.
+
 ## Project structure
 
 ```text
@@ -147,6 +155,7 @@ Services/
 Localization/
   Loc.cs                    Translation tables + live language-switching
   ActionResult.cs           Localized result type returned by service actions
+tests/BgOptimizer.Tests/    xUnit tests (run with `dotnet test tests/BgOptimizer.Tests`)
 scripts/                    Optional standalone hardening scripts (WinRM, inbound SMB); see scripts/README.md
 installer/
   Install-Shortcut.ps1      Copies a published build + creates Start Menu/Desktop shortcuts

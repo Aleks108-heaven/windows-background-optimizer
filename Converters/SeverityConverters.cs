@@ -41,15 +41,32 @@ public static class SeverityRules
 }
 
 /// <summary>
-/// Fixed colors matching Theme.xaml's palette, shared by every severity
-/// converter so "warn" and "danger" always mean the same shade everywhere.
+/// Severity colours come from Theme.xaml (OkText = TextDim, Warn, Danger, Faint = TextFaint) so a
+/// palette change there is the only edit needed. The literals are used only when no Application
+/// (e.g. unit tests) is loaded; they must equal the theme values.
 /// </summary>
 internal static class SeverityColors
 {
-    public static readonly SolidColorBrush Ok = Freeze(0x9a, 0xa2, 0xb1);
-    public static readonly SolidColorBrush Warn = Freeze(0xf0, 0xa9, 0x3e);
-    public static readonly SolidColorBrush Danger = Freeze(0xef, 0x5b, 0x5b);
-    public static readonly SolidColorBrush Faint = Freeze(0x83, 0x8b, 0x9b);
+    private static readonly Dictionary<string, SolidColorBrush> Cache = new();
+
+    private static SolidColorBrush Pick(string themeKey, byte r, byte g, byte b)
+    {
+        lock (Cache)
+        {
+            if (Cache.TryGetValue(themeKey, out var cached)) return cached;
+            if (System.Windows.Application.Current?.TryFindResource(themeKey) is SolidColorBrush fromTheme)
+                return Cache[themeKey] = fromTheme;
+            // No theme loaded (unit tests): fall back to the literal, but don't cache it.
+            var fallback = new SolidColorBrush(Color.FromRgb(r, g, b));
+            fallback.Freeze();
+            return fallback;
+        }
+    }
+
+    public static SolidColorBrush Ok => Pick("TextDimBrush", 0x9a, 0xa2, 0xb1);
+    public static SolidColorBrush Warn => Pick("WarnBrush", 0xf2, 0xb8, 0x4b);
+    public static SolidColorBrush Danger => Pick("DangerBrush", 0xef, 0x5b, 0x5b);
+    public static SolidColorBrush Faint => Pick("TextFaintBrush", 0x90, 0x97, 0xa7);
 
     public static SolidColorBrush For(Severity s) => s switch
     {
@@ -58,15 +75,7 @@ internal static class SeverityColors
         Severity.Faint => Faint,
         _ => Ok,
     };
-
-    private static SolidColorBrush Freeze(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
 }
-
 /// <summary>
 /// Base for the severity converters: subclasses only say how to rate a value; brush,
 /// glyph and weight are derived from the target type. The glyph and weight exist so

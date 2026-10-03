@@ -90,28 +90,38 @@ public class SecurityManager
     /// <summary>Program paths that have a rule created by this app.</summary>
     public List<string> GetBlockedApps()
     {
+        // Read from the firewall policy registry store instead of parsing `netsh show rule` text,
+        // whose "Rule Name:" label is localized (an empty list on non-English Windows would leave
+        // the user unable to remove rules this app created).
         var result = new List<string>();
         try
         {
-            var psi = new ProcessStartInfo(SystemTools.Path("netsh.exe"))
-            {
-                CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true,
-            };
-            foreach (var a in new[] { "advfirewall", "firewall", "show", "rule", "name=all", "dir=out" }) psi.ArgumentList.Add(a);
-            using var p = Process.Start(psi)!;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(10000);
-            foreach (var line in output.Split('\n'))
-            {
-                var t = line.Trim();
-                var idx = t.IndexOf(':');
-                if (idx > 0 && t.StartsWith("Rule Name:", StringComparison.OrdinalIgnoreCase)
-                    && t[(idx + 1)..].Trim() is var n && n.StartsWith(AppRulePrefix))
-                    result.Add(n[AppRulePrefix.Length..]);
-            }
+            using var key = Registry.LocalMachine.OpenSubKey($@"{ProfilesKey}\FirewallRules");
+            if (key == null) return result;
+            foreach (var valueName in key.GetValueNames())
+                if (key.GetValue(valueName) is string rule && ParseBlockedAppPath(rule) is { } path)
+                    result.Add(path);
         }
         catch { }
         return result;
+    }
+
+    /// <summary>
+    /// A stored rule looks like "v2.31|Action=Block|Active=TRUE|Dir=Out|App=...|Name=BgOptimizer Block Out: C:\x.exe|".
+    /// Returns the program path if it is an outbound rule created by this app, otherwise null.
+    /// </summary>
+    internal static string? ParseBlockedAppPath(string storedRule)
+    {
+        string? name = null;
+        var outbound = false;
+        foreach (var part in storedRule.Split('|'))
+        {
+            if (part.StartsWith("Name=", StringComparison.Ordinal)) name = part[5..];
+            else if (part.Equals("Dir=Out", StringComparison.OrdinalIgnoreCase)) outbound = true;
+        }
+        return outbound && name != null && name.StartsWith(AppRulePrefix, StringComparison.Ordinal)
+            ? name[AppRulePrefix.Length..]
+            : null;
     }
 
     public ActionResult SetAppBlocked(string exePath, bool blocked)

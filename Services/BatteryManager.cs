@@ -63,9 +63,20 @@ public class BatteryManager
     public bool? IsHibernateOnLidClose()
     {
         var (code, output) = RunPowercfg("/q SCHEME_CURRENT SUB_BUTTONS LIDACTION");
-        if (code != 0) return null;
-        var m = Regex.Match(output, @"Current DC Power Setting Index:\s*0x0*([0-9a-fA-F]+)");
-        return m.Success ? m.Groups[1].Value.TrimEnd() == "2" : null;
+        return code != 0 ? null : ParseDcLidAction(output);
+    }
+
+    /// <summary>
+    /// powercfg's labels are localized, but its values are always 0x-prefixed hex and the DC
+    /// ("on battery") index is printed last, after min/max/increment and the AC index. So the
+    /// last hex value is read instead of matching the English "Current DC Power Setting Index".
+    /// </summary>
+    internal static bool? ParseDcLidAction(string powercfgOutput)
+    {
+        var hex = Regex.Matches(powercfgOutput, @"0x([0-9a-fA-F]{8})\b");
+        // Needs at least the AC and DC indexes (plus min/max/increment) to be a real /q listing.
+        if (hex.Count < 2) return null;
+        return Convert.ToUInt32(hex[^1].Groups[1].Value, 16) == 2;
     }
 
     public ActionResult SetHibernateOnLidClose(bool enabled)

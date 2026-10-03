@@ -10,12 +10,19 @@
     <SolidColorBrush x:Key="BorderSoftBrush" Color="#232830"/>
     <SolidColorBrush x:Key="TextBrush" Color="#E7EAF0"/>
     <SolidColorBrush x:Key="TextDimBrush" Color="#9AA2B1"/>
-    <SolidColorBrush x:Key="TextFaintBrush" Color="#838B9B"/>
+    <!-- Faint text stays >= 4.5:1 on every surface it sits on (panel, hover row, selected row). -->
+    <SolidColorBrush x:Key="TextFaintBrush" Color="#9097A7"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#4C8DFF"/>
     <SolidColorBrush x:Key="AccentDimBrush" Color="#2F5FB8"/>
     <!-- Solid fill for primary buttons: white text on it is ~4.7:1 (AccentBrush is only ~3.2:1). -->
     <SolidColorBrush x:Key="AccentSolidBrush" Color="#2F6FE0"/>
     <SolidColorBrush x:Key="DangerBrush" Color="#EF5B5B"/>
+    <!-- Danger as TEXT on the tinted danger button: DangerBrush itself is only ~3.9:1 there; this is ~5.7:1. -->
+    <SolidColorBrush x:Key="DangerTextBrush" Color="#FF8A8A"/>
+    <!-- Boundary of inputs/combos/buttons: >= 3:1 against the surfaces they sit on (WCAG 1.4.11). BorderBrush2 stays for decorative panels. -->
+    <SolidColorBrush x:Key="ControlBorderBrush" Color="#687085"/>
+    <!-- Keyboard focus ring colour. -->
+    <SolidColorBrush x:Key="FocusBrush" Color="#8AB4FF"/>
     <SolidColorBrush x:Key="GoodBrush" Color="#35C98F"/>
     <!-- Caution tone for options that can hurt responsiveness if misused (amber on the panel colour is ~9:1). -->
     <SolidColorBrush x:Key="WarnBrush" Color="#F2B84B"/>
@@ -29,6 +36,17 @@
     <conv:ProtectedToLockGlyphConverter x:Key="ProtectedToLockGlyph"/>
     <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
+    <!-- Visible keyboard focus: the custom control templates below drop the stock chrome, so this is the only focus cue. -->
+    <Style x:Key="FocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-2" Stroke="{StaticResource FocusBrush}" StrokeThickness="2" RadiusX="6" RadiusY="6" SnapsToDevicePixels="True"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource BgBrush}"/>
     </Style>
@@ -41,8 +59,9 @@
     <Style x:Key="BtnGhost" TargetType="Button">
         <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextDimBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
         <Setter Property="Padding" Value="12,6"/>
         <Setter Property="Margin" Value="4"/>
         <Setter Property="FontSize" Value="12.5"/>
@@ -85,12 +104,13 @@
 
     <Style x:Key="BtnDanger" TargetType="Button" BasedOn="{StaticResource BtnGhost}">
         <Setter Property="Background" Value="{StaticResource DangerBgBrush}"/>
-        <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource DangerTextBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource DangerBrush}"/>
     </Style>
 
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource TextDimBrush}"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
     </Style>
 
     <!--
@@ -123,8 +143,9 @@
     <Style TargetType="ComboBox">
         <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
         <Setter Property="Padding" Value="8,4"/>
         <Setter Property="Margin" Value="4"/>
         <Setter Property="Template">
@@ -184,7 +205,9 @@
         <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
         <Setter Property="Padding" Value="6,4"/>
         <Setter Property="Margin" Value="4"/>
     </Style>
@@ -194,6 +217,7 @@
         <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}"/>
         <Setter Property="Padding" Value="14,8"/>
         <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">

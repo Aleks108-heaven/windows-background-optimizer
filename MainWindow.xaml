@@ -39,7 +39,7 @@
                         <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="0,0,8,6">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" VerticalAlignment="Center" Margin="6,0,4,0"/>
-                                <ComboBox x:Name="PriorityCombo" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" Width="120" SelectedIndex="0">
+                                <ComboBox x:Name="PriorityCombo" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Priority]}" Width="120" SelectedIndex="2">
                                     <ComboBoxItem Content="Idle"/>
                                     <ComboBoxItem Content="BelowNormal"/>
                                     <ComboBoxItem Content="Normal"/>
@@ -47,7 +47,8 @@
                                     <ComboBoxItem Content="High"/>
                                 </ComboBox>
                                 <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_ApplyPriority]}" Click="ApplyPriority_Click"/>
-                                <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                <CheckBox x:Name="PersistPriorityCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriority]}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                          ToolTip="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_PersistPriorityHint]}"/>
                                 <!-- Caution styling: this override is what lets browsers/shell be slowed down (and can break Cloudflare checks) -->
                                 <CheckBox x:Name="AllowInteractiveThrottleCheck" VerticalAlignment="Center" Margin="10,0,4,0"
                                           Foreground="{StaticResource WarnBrush}"
@@ -185,18 +186,18 @@
             <!-- STARTUP TAB -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Startup]}">
                 <DockPanel Margin="8">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                    <WrapPanel DockPanel.Dock="Top">
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Refresh]}" Click="RefreshStartup_Click"/>
                         <Button Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_EnableSelected]}" Click="EnableStartup_Click"/>
                         <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_DisableSelected]}" Click="DisableStartup_Click"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,0"/>
                         <TextBox x:Name="StartupSearchBox" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" Width="180" VerticalContentAlignment="Center" TextChanged="StartupSearch_TextChanged"/>
-                    </StackPanel>
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,6,0,0">
+                    </WrapPanel>
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,6,0,0">
                         <CheckBox x:Name="AutoRestorePointCheck" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Chk_AutoRestorePoint]}" VerticalAlignment="Center" IsChecked="True"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_CreateRestorePoint]}" Click="CreateRestorePoint_Click" Margin="12,0,0,0"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_CategoryNote]}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="{StaticResource TextFaintBrush}"/>
-                    </StackPanel>
+                    </WrapPanel>
                     <DataGrid x:Name="StartupGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Startup]}" Margin="0,8,0,0" RowStyle="{StaticResource BaseRowStyle}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="200" ElementStyle="{StaticResource TrimTextCell}"/>
@@ -213,7 +214,7 @@
             <!-- SERVICES TAB -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Services]}">
                 <DockPanel Margin="8">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                    <WrapPanel DockPanel.Dock="Top">
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_Refresh]}" Click="RefreshServices_Click"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_SetAutomatic]}" Click="ServiceAuto_Click"/>
                         <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_SetManual]}" Click="ServiceManual_Click"/>
@@ -222,7 +223,7 @@
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" VerticalAlignment="Center" Margin="16,0,4,0"/>
                         <TextBox x:Name="ServiceSearchBox" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Lbl_Search]}" Width="180" VerticalContentAlignment="Center" TextChanged="ServiceSearch_TextChanged"/>
                         <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_ServicesProtected]}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="{StaticResource TextFaintBrush}"/>
-                    </StackPanel>
+                    </WrapPanel>
                     <DataGrid x:Name="ServiceGrid" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Services]}" Margin="0,8,0,0" RowStyle="{StaticResource ProtectedRowStyle}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_DisplayName]}" Binding="{Binding DisplayName}" Width="250" ElementStyle="{StaticResource TrimTextCell}"/>

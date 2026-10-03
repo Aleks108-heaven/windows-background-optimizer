@@ -26,6 +26,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of the app's own globbing. -->
+    <Compile Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <None Remove="tests\**" />
+    <InternalsVisibleTo Include="BgOptimizer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="icon.ico" />
   </ItemGroup>
 

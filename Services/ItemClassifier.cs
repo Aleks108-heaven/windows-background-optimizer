@@ -47,13 +47,23 @@ internal static class ItemClassifier
     public static ItemCategory ClassifyService(string serviceName, string displayName) =>
         ProtectedItems.IsServiceProtected(serviceName) ? ItemCategory.Core : Classify(serviceName, displayName);
 
+    // Short dev-tool words must start a word: plain Contains put "Digital Editions" and
+    // "Legitimate Updater" in DevTool because both contain "git". "GitHubDesktop" still matches.
+    private static bool ContainsAtWordStart(string text, string pattern)
+    {
+        for (var i = text.IndexOf(pattern, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(pattern, i + 1, StringComparison.Ordinal))
+            if (i == 0 || !char.IsLetter(text[i - 1])) return true;
+        return false;
+    }
+
     private static ItemCategory Classify(string a, string b)
     {
         if (ExplicitCore.Contains(a) || ExplicitCore.Contains(b)) return ItemCategory.Core;
 
         var text = $"{a} {b}".ToLowerInvariant();
         if (Array.Exists(TelemetryPatterns, p => text.Contains(p))) return ItemCategory.Telemetry;
-        if (Array.Exists(DevToolPatterns, p => text.Contains(p))) return ItemCategory.DevTool;
+        if (Array.Exists(DevToolPatterns, p => ContainsAtWordStart(text, p))) return ItemCategory.DevTool;
         if (Array.Exists(VendorDiagPatterns, p => text.Contains(p))) return ItemCategory.VendorDiag;
         return ItemCategory.Unknown;
     }

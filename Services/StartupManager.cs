@@ -64,6 +64,8 @@ public class StartupManager
 
         foreach (var file in Directory.GetFiles(folder))
         {
+            // desktop.ini and similar are hidden/system bookkeeping files, not startup items.
+            if ((File.GetAttributes(file) & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
             bool disabled = file.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
             var name = Path.GetFileNameWithoutExtension(disabled ? Path.GetFileNameWithoutExtension(file) : file);
             list.Add(new StartupEntry { Name = name, Command = file, Source = source, Enabled = !disabled });
@@ -137,51 +139,69 @@ public class StartupManager
     // the list unusable and risks the user disabling something the OS depends on.
     private const string MicrosoftTaskPrefix = @"\Microsoft\";
 
+    // Read through the Task Scheduler COM API rather than parsing `schtasks /query` text: that text
+    // (including the "Disabled" status word and the CSV header) is localized, so on a non-English
+    // Windows disabled tasks would be shown as enabled. COM returns the Enabled flag directly and
+    // is much faster than spawning a process.
     private static List<StartupEntry> ReadScheduledTasks()
     {
         var list = new List<StartupEntry>();
+        object? service = null;
         try
         {
-            var output = RunSchtasks("/query", "/fo", "csv");
-            if (output == null) return list;
-
-            var lines = output.Split('\n');
-            if (lines.Length == 0) return list;
-            var headerLine = lines[0].Trim();
-
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var line in lines.Skip(1))
-            {
-                // On large task lists, schtasks re-emits the CSV header partway through its
-                // (redirected) output - not just once at the top - so every repeat has to be
-                // filtered here or it gets parsed as a bogus task named "TaskName".
-                if (string.Equals(line.Trim(), headerLine, StringComparison.OrdinalIgnoreCase)) continue;
-
-                var fields = SplitSchtasksCsvLine(line);
-                if (fields.Length < 3) continue;
-
-                var taskPath = fields[0].Trim();
-                var status = fields[2].Trim();
-                if (string.IsNullOrEmpty(taskPath)) continue;
-                if (taskPath.StartsWith(MicrosoftTaskPrefix, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!seen.Add(taskPath)) continue; // schtasks repeats a row per trigger; keep the first
-
-                var name = taskPath[(taskPath.LastIndexOf('\\') + 1)..];
-                list.Add(new StartupEntry
-                {
-                    Name = name,
-                    Command = taskPath,
-                    Source = StartupSource.ScheduledTask,
-                    Enabled = !string.Equals(status, "Disabled", StringComparison.OrdinalIgnoreCase),
-                });
-            }
+            var type = Type.GetTypeFromProgID("Schedule.Service");
+            if (type == null) return list;
+            service = Activator.CreateInstance(type);
+            if (service == null) return list;
+            dynamic svc = service;
+            svc.Connect();
+            WalkTaskFolder(svc.GetFolder("\\"), list);
         }
         catch (Exception)
         {
-            // schtasks unavailable or failed to run; scheduled tasks just won't appear this round.
+            // Task Scheduler unavailable; scheduled tasks just won't appear this round.
         }
-        return list;
+        finally
+        {
+            if (service != null && System.Runtime.InteropServices.Marshal.IsComObject(service))
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(service);
+        }
+        return list.OrderBy(e => e.Command, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    private static void WalkTaskFolder(dynamic folder, List<StartupEntry> into)
+    {
+        string folderPath = folder.Path;
+        // Windows-internal plumbing is skipped wholesale, folder and all.
+        if (IsMicrosoftTaskPath(folderPath + "\\")) return;
+
+        try
+        {
+            foreach (dynamic task in folder.GetTasks(1 /* TASK_ENUM_HIDDEN */))
+            {
+                try
+                {
+                    string taskPath = task.Path;
+                    if (IsMicrosoftTaskPath(taskPath)) continue;
+                    into.Add(new StartupEntry
+                    {
+                        Name = taskPath[(taskPath.LastIndexOf('\\') + 1)..],
+                        Command = taskPath,
+                        Source = StartupSource.ScheduledTask,
+                        Enabled = (bool)task.Enabled,
+                    });
+                }
+                catch (Exception) { /* one unreadable task must not hide the rest */ }
+            }
+            foreach (dynamic sub in folder.GetFolders(0))
+                WalkTaskFolder(sub, into);
+        }
+        catch (Exception) { /* folder not readable */ }
+    }
+
+    internal static bool IsMicrosoftTaskPath(string taskPath) =>
+        taskPath.StartsWith(MicrosoftTaskPrefix, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(taskPath, MicrosoftTaskPrefix.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
     private static ActionResult SetScheduledTaskEnabled(StartupEntry entry, bool enabled)
     {
@@ -206,36 +226,5 @@ public class StartupManager
 
         entry.Enabled = enabled;
         return new ActionResult(true, enabled ? "Msg_StartupEnabled" : "Msg_StartupDisabled", entry.Name);
-    }
-
-    private static string? RunSchtasks(params string[] args)
-    {
-        var psi = new ProcessStartInfo(SystemTools.Path("schtasks.exe"))
-        {
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var arg in args) psi.ArgumentList.Add(arg);
-
-        using var proc = Process.Start(psi);
-        if (proc == null) return null;
-        var output = proc.StandardOutput.ReadToEnd();
-        proc.WaitForExit();
-        return output;
-    }
-
-    // schtasks' CSV output wraps every field in quotes but doesn't escape quotes that
-    // appear inside a value (e.g. a quoted argument in "Task To Run"), so a real CSV
-    // parser would misjudge field boundaries. Splitting on the literal `","` separator
-    // instead sidesteps that, since a bare `","` sequence essentially never occurs
-    // inside a field's own contents.
-    private static string[] SplitSchtasksCsvLine(string line)
-    {
-        var trimmed = line.Trim();
-        if (trimmed.Length == 0) return Array.Empty<string>();
-        if (trimmed.StartsWith('"') && trimmed.EndsWith('"'))
-            trimmed = trimmed[1..^1];
-        return trimmed.Split("\",\"");
     }
 }
