@@ -137,9 +137,25 @@ The app still prompts for admin on every launch either way — that's the manife
 
 ### Inno Setup installer (unsigned)
 
-[installer/BgOptimizer.iss](installer/BgOptimizer.iss) builds a conventional `BgOptimizer-Setup-<version>.exe`. CI builds it on every push and uploads it as the `BgOptimizer-Setup` artifact; to build it yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), publish as above, then run `ISCC.exe /DAppVersion=1.0.0 installer\BgOptimizer.iss` (output goes to `installer\Output\`). It installs for all users (it needs admin), offers an optional desktop icon, has a wizard in all seven app languages, closes a running copy before upgrading, and registers an uninstaller. Uninstalling removes the app and `%LocalAppData%\BgOptimizer`, and leaves Windows changes the app made, as above.
+[installer/BgOptimizer.iss](installer/BgOptimizer.iss) builds a conventional `BgOptimizer-Setup-<version>.exe`. CI builds it on every push and uploads it as the `BgOptimizer-Setup` artifact; to build it yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), publish as above, then run `ISCC.exe /DAppVersion=1.0.0 installer\BgOptimizer.iss` (output goes to `installer\Output\`). It installs for all users (it needs admin), offers an optional desktop icon, has a wizard in all seven app languages, offers to close a running copy before upgrading, and registers an uninstaller. Uninstalling removes the app and `%LocalAppData%\BgOptimizer`, and leaves Windows changes the app made, as above.
 
 **It is not code-signed.** Expect a SmartScreen warning, and on a machine with Smart App Control enforcing it may be blocked outright (see above). Until the exe, dll and `Setup.exe` are signed, prefer the shortcut script on such a machine.
+
+### Switching between the two, or if both are installed
+
+Running both installs leaves two copies of the app on the machine (`C:\Program Files\BgOptimizer` and `C:\Program Files\Background Optimizer`), and the shortcuts can point at different ones: both installs create a Desktop shortcut with the same name, `Background Optimizer.lnk` on the public Desktop, so whichever ran last owns it, while the Start menu gets a separate entry from each. If the app you launch isn't the build you expect, right-click `BgOptimizer.exe` in Task Manager → Details → **Open file location** to see which copy is running.
+
+**Recommended on a machine with Smart App Control, until the files are signed:** keep the shortcut-script install, since an unsigned `Setup.exe` may be blocked.
+
+1. Exit the app (tray icon → **Exit**).
+2. Open **Settings → Apps → Installed apps**, find **Background Optimizer**, and uninstall it. This removes the Inno copy in `C:\Program Files\Background Optimizer` together with its Desktop and Start-menu shortcuts.
+3. Re-run `installer\Install-Shortcut.ps1` from an elevated PowerShell (see above). If the Inno install created the Desktop shortcut (the optional desktop-icon checkbox), the uninstall in step 2 deletes that shared shortcut even if the script had created the same file earlier, and the script puts it back.
+
+**To keep the Inno `Setup.exe` instead** (for example, to update with a newer one):
+
+- **Updating:** run the newer `BgOptimizer-Setup-<version>.exe` over the existing install. It uses the same application ID, so it replaces the old copy rather than installing a second one, and it offers to close a running copy first (exit the app from the tray icon yourself if you'd rather). Get the new `Setup.exe` from the latest CI run's `BgOptimizer-Setup` artifact (a GitHub login is required), or build it yourself as described above.
+- **Removing the shortcut-script copy** so only one copy remains: exit the app, delete `C:\Program Files\BgOptimizer` and the Start-menu shortcut `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Background Optimizer.lnk` (a single file, not the folder of the same name that Inno creates). The shared Desktop shortcut is overwritten by whichever install ran last, so re-run `Setup.exe` afterwards if it still points at the old folder.
+- If Windows or Smart App Control blocks `Setup.exe`, nothing has been installed. Use the shortcut script instead.
 
 ### Troubleshooting
 
