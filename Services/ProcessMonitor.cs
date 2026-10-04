@@ -13,7 +13,16 @@ public class ProcessMonitor
     private readonly Dictionary<int, ProcessEntry> _tracked = new();
     private readonly int _processorCount = Environment.ProcessorCount;
 
+    // Refresh runs on a worker thread from the timer and can also be called from the UI thread
+    // (manual refresh buttons), so the two must never walk the tracking dictionary at once.
+    private readonly object _refreshGate = new();
+
     public IReadOnlyList<ProcessEntry> Refresh()
+    {
+        lock (_refreshGate) return RefreshCore();
+    }
+
+    private IReadOnlyList<ProcessEntry> RefreshCore()
     {
         var now = DateTime.UtcNow;
         var seenPids = new HashSet<int>();

@@ -27,9 +27,34 @@ internal static class ProtectedItems
         "BgOptimizer", "AsusOSD", "AsusHotkey", "Code", "devenv",
     };
 
+    // Audio/media apps do their real work in audiodg and the driver, so the app process itself sits
+    // near 0% CPU while sound is playing. The idle detector therefore reads them as "doing nothing";
+    // trimming, throttling or freezing one cuts the sound (what broke AudioTune Pro). Matched by exact
+    // name plus the "audio"/"sound" fragments that vendor tools and drivers use.
+    public static readonly HashSet<string> AudioProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AudioTunePro", "RtkAudUService64", "RtkNGUI64", "Nahimic3", "NahimicService", "DolbyDAX2API",
+        "EqualizerAPO", "Voicemeeter", "voicemeeter8x64", "VoicemeeterPro", "FxSound", "Spotify",
+        "vlc", "foobar2000", "AIMP", "wmplayer", "Music.UI", "Discord", "Teams", "ms-teams", "Zoom",
+    };
+
+    private static readonly string[] AudioNameFragments = { "audio", "sound", "voicemeeter" };
+
+    public static bool IsAudioApp(string processName)
+    {
+        var name = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? processName[..^4] : processName;
+        if (AudioProcessNames.Contains(name)) return true;
+        foreach (var fragment in AudioNameFragments)
+            if (name.Contains(fragment, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    // Audio apps are included here so every existing guard (SetPriority, suspend, enforce loop,
+    // Laptop Saver, WorkloadOptimizer) protects them without each needing its own check.
     public static bool IsInteractive(string processName) =>
         InteractiveProcessNames.Contains(processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? processName[..^4] : processName);
+            ? processName[..^4] : processName)
+        || IsAudioApp(processName);
 
     // Third-party AV/EDR/backup/VPN agents: not covered by ProtectedProcessNames (which only
     // lists Microsoft's own critical processes + Defender). These commonly run as low-CPU,

@@ -79,9 +79,25 @@ public class BatteryManager
         return Convert.ToUInt32(hex[^1].Groups[1].Value, 16) == 2;
     }
 
+    // On Modern Standby laptops, screen-off and idle both enter standby (light stays on) and the lid
+    // action never applies to them; only "hibernate after" moves standby on to a real hibernate.
+    // Left at "never" Windows eventually hibernates on its own battery-budget rule, hours later.
+    internal const int HibernateAfterSeconds = 30 * 60;
+    private uint? _previousHibernateAfter;
+
+    /// <returns>The DC ("on battery") value of a powercfg setting, or null if it can't be read.</returns>
+    private static uint? ReadDcIndex(string subgroup, string setting)
+    {
+        var (code, output) = RunPowercfg($"/q SCHEME_CURRENT {subgroup} {setting}");
+        if (code != 0) return null;
+        var hex = Regex.Matches(output, @"0x([0-9a-fA-F]{8})\b");
+        return hex.Count < 2 ? null : Convert.ToUInt32(hex[^1].Groups[1].Value, 16);
+    }
+
     public ActionResult SetHibernateOnLidClose(bool enabled)
     {
         RunPowercfg("-attributes SUB_BUTTONS LIDACTION -ATTRIB_HIDE"); // unhide; some OEM images hide it by default
+        RunPowercfg("-attributes SUB_SLEEP HIBERNATEIDLE -ATTRIB_HIDE");
 
         if (enabled)
         {
@@ -90,6 +106,8 @@ public class BatteryManager
                 return new ActionResult(false, "Msg_SecurityFailed", "Hibernate", hibOut.Trim());
 
             RunPowercfg("/setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 2");
+            _previousHibernateAfter ??= ReadDcIndex("SUB_SLEEP", "HIBERNATEIDLE");
+            RunPowercfg($"/setdcvalueindex SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE {HibernateAfterSeconds}");
             RunPowercfg("/setactive SCHEME_CURRENT");
 
             return IsHibernateOnLidClose() == true
@@ -99,6 +117,8 @@ public class BatteryManager
         else
         {
             var (code, output) = RunPowercfg("/setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 1");
+            RunPowercfg($"/setdcvalueindex SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE {_previousHibernateAfter ?? 0}");
+            _previousHibernateAfter = null;
             RunPowercfg("/setactive SCHEME_CURRENT");
             return code == 0
                 ? new ActionResult(true, "Msg_HibernateOff")

@@ -41,11 +41,14 @@ internal static class ItemClassifier
         "supporttypeupdate", "install manager", "update checker",
     };
 
+    // Audio components are labelled Core so neither the Startup/Services tabs nor Laptop Saver
+    // treat a vendor audio helper ("realtek", "driver" in its name) as disposable bloat.
     public static ItemCategory ClassifyStartup(string name, string command) =>
-        ProtectedItems.IsProcessProtected(name) ? ItemCategory.Core : Classify(name, command);
+        ProtectedItems.IsProcessProtected(name) || ProtectedItems.IsAudioApp(name) ? ItemCategory.Core : Classify(name, command);
 
     public static ItemCategory ClassifyService(string serviceName, string displayName) =>
-        ProtectedItems.IsServiceProtected(serviceName) ? ItemCategory.Core : Classify(serviceName, displayName);
+        ProtectedItems.IsServiceProtected(serviceName) || ProtectedItems.IsAudioApp(serviceName) || ProtectedItems.IsAudioApp(displayName)
+            ? ItemCategory.Core : Classify(serviceName, displayName);
 
     // Short dev-tool words must start a word: plain Contains put "Digital Editions" and
     // "Legitimate Updater" in DevTool because both contain "git". "GitHubDesktop" still matches.

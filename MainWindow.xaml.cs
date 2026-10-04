@@ -16,7 +16,10 @@ public partial class MainWindow : Window
     private readonly StartupManager _startupManager = new();
     private readonly SvcManager _svcManager = new();
     private readonly SystemStats _systemStats = new();
-    private readonly WorkloadOptimizer _workloadOptimizer = new();
+    // Refresh cadence for the process list, graphs and Auto-Optimize. 2s was needlessly heavy for the
+    // app's own CPU; 5s still feels live. Thresholds elsewhere are derived from this, not hard-coded.
+    private const int RefreshSeconds = 5;
+    private readonly WorkloadOptimizer _workloadOptimizer = new(RefreshSeconds);
 
     private readonly ObservableCollection<ProcessEntry> _processes = new();
     private readonly ObservableCollection<StartupEntry> _startupItems = new();
@@ -49,8 +52,8 @@ public partial class MainWindow : Window
     // reopening Startup Apps/Services and setting the value back by hand.
     private readonly Stack<Func<ActionResult>> _undoStack = new();
 
-    // 30 samples at the 2s refresh interval mirrors Task Manager's 60-second window.
-    private const int GraphHistoryLength = 30;
+    // Keeps a 60-second window (like Task Manager) whatever the refresh interval is.
+    private const int GraphHistoryLength = 60 / RefreshSeconds;
     private readonly List<double> _cpuHistory = new();
     private readonly List<double> _memHistory = new();
 
@@ -71,6 +74,10 @@ public partial class MainWindow : Window
         CpuGraphCanvas.SizeChanged += (_, _) => DrawSparkline(CpuGraphCanvas, _cpuHistory);
         MemoryGraphCanvas.SizeChanged += (_, _) => DrawSparkline(MemoryGraphCanvas, _memHistory);
 
+        // A previous run that crashed or was killed may have left processes frozen; only we can thaw them.
+        var leftover = SuspendedStore.ResumeLeftovers();
+        if (leftover > 0) Log(Loc.Instance.Format("Msg_ResumedLeftover", leftover));
+
         RefreshProcesses();
         RefreshStartup();
         RefreshServices();
@@ -80,23 +87,33 @@ public partial class MainWindow : Window
 
         Loc.Instance.PropertyChanged += (_, _) => { RefreshSecurity(); BuildTweaks(); };
 
-        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _refreshTimer.Tick += (_, _) =>
-        {
-            // AutoOptimizeTick can open a modal dialog; DispatcherTimer keeps ticking inside
-            // that nested loop, so without this guard a second tick would stack another dialog.
-            if (_tickRunning) return;
-            _tickRunning = true;
-            try
-            {
-                RefreshProcesses();
-                UpdateSystemStats();
-                RefreshBattery(); // cheap WMI reads only; the rest of RefreshSecurity() spawns netsh and stays on-demand
-                AutoOptimizeTick();
-            }
-            finally { _tickRunning = false; }
-        };
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(RefreshSeconds) };
+        _refreshTimer.Tick += async (_, _) => await TickAsync();
         _refreshTimer.Start();
+    }
+
+    private bool _closed;
+
+    private async Task TickAsync()
+    {
+        // The guard stays set across the await, so a slow scan can never overlap the next tick; it also
+        // covers AutoOptimizeTick opening a modal dialog (the timer keeps ticking in that nested loop).
+        if (_tickRunning || _closed) return;
+        _tickRunning = true;
+        try
+        {
+            // Enumerating every process and the battery WMI query are the slow parts; they run off the
+            // UI thread so the window never stutters during a refresh. Only the results are applied here.
+            var (fresh, battery) = await Task.Run(() => (_processMonitor.Refresh(), _battery.GetHealth()));
+            if (_closed) return;
+
+            ApplyProcesses(fresh);
+            UpdateSystemStats();
+            ApplyBattery(battery);
+            AutoOptimizeTick();
+        }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { _tickRunning = false; }
     }
 
     // ---------- System stats ----------
@@ -233,13 +250,14 @@ public partial class MainWindow : Window
         // throttled stays throttled) after exit unless it is released here.
         Closed += (_, _) =>
         {
+            _closed = true;
             _refreshTimer.Stop();
             RestoreAutoThrottled();
             _trayIcon.Dispose();
         };
     }
 
-    private void RestoreFromTray()
+    internal void RestoreFromTray()
     {
         Show();
         WindowState = WindowState.Normal;
@@ -283,10 +301,11 @@ public partial class MainWindow : Window
     // the DataGrid to regenerate every row's visual tree every 2 seconds, which was the
     // single biggest source of the app's own CPU usage. This also means multi-selection
     // now survives a refresh for free, since the selected objects are never replaced.
-    private void RefreshProcesses()
-    {
-        var fresh = _processMonitor.Refresh();
+    // Synchronous variant for startup and the button handlers; the timer uses TickAsync instead.
+    private void RefreshProcesses() => ApplyProcesses(_processMonitor.Refresh());
 
+    private void ApplyProcesses(IReadOnlyList<ProcessEntry> fresh)
+    {
         // Windows respawns helpers like SearchFilterHost under new PIDs at Normal priority,
         // so a one-shot priority change is lost. Re-apply it to every new instance by name.
         if (_enforcedPriorities.Count > 0)
@@ -376,7 +395,7 @@ public partial class MainWindow : Window
         TrimProcesses(ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList());
 
     private void FreeRamAll_Click(object sender, RoutedEventArgs e) =>
-        TrimProcesses(_processes.Where(p => !p.IsProtected && p.MemoryBytes > 20L * 1024 * 1024).ToList());
+        TrimProcesses(_processes.Where(p => !p.IsProtected && !ProtectedItems.IsAudioApp(p.Name) && p.MemoryBytes > 20L * 1024 * 1024).ToList());
 
     private void TrimProcesses(List<ProcessEntry> entries)
     {
@@ -542,6 +561,7 @@ public partial class MainWindow : Window
                     {
                         _autoSuspended[entry.Pid] = entry.Name;
                         entry.IsSuspended = true;
+                        PersistSuspended(); // written right after each freeze, so a crash can't strand it
                         Log(result);
                     }
                 }
@@ -572,8 +592,12 @@ public partial class MainWindow : Window
         foreach (var (pid, name) in _autoSuspended.ToList())
             ResumeOne(pid, name);
         _autoSuspended.Clear();
+        PersistSuspended();
         SuspendedCountText.Text = "";
     }
+
+    private void PersistSuspended() =>
+        SuspendedStore.Save(_autoSuspended.Select(kv => (kv.Key, kv.Value)));
 
     private void ResumeOne(int pid, string name)
     {
@@ -593,6 +617,7 @@ public partial class MainWindow : Window
             ResumeOne(pid, _autoSuspended[pid]);
             _autoSuspended.Remove(pid);
         }
+        if (resumed.Count > 0) PersistSuspended();
         if (resumed.Count > 0)
             SuspendedCountText.Text = _autoSuspended.Count > 0
                 ? Loc.Instance.Format("Lbl_SuspendedCount", _autoSuspended.Count)
@@ -741,9 +766,10 @@ public partial class MainWindow : Window
     }
 
     // Cheap WMI reads only (no process spawn) - safe to call every 2s so charge % doesn't go stale.
-    private void RefreshBattery()
+    private void RefreshBattery() => ApplyBattery(_battery.GetHealth());
+
+    private void ApplyBattery(BatteryManager.BatteryHealth h)
     {
-        var h = _battery.GetHealth();
         if (h.Percent is null)
         {
             BatteryHealthText.Text = Loc.Instance["Sec_BatteryUnavailable"];

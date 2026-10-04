@@ -30,7 +30,12 @@ public class SvcManager
         return list.OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    /// <param name="mode">"Auto", "Manual", or "Disabled"</param>
+    // Win32_Service.StartMode *reports* "Auto" but ChangeStartMode only *accepts* "Automatic"
+    // ("Auto" returns 21, invalid parameter), so reading a mode and writing it back needs this mapping.
+    internal static string ToWmiStartMode(string mode) =>
+        string.Equals(mode, "Auto", StringComparison.OrdinalIgnoreCase) ? "Automatic" : mode;
+
+    /// <param name="mode">"Auto"/"Automatic", "Manual", or "Disabled"</param>
     public ActionResult SetStartMode(ServiceEntry entry, string mode)
     {
         if (entry.IsProtected)
@@ -45,7 +50,7 @@ public class SvcManager
             if (service == null)
                 return new ActionResult(false, "Msg_ServiceNotFound", entry.Name);
 
-            var result = service.InvokeMethod("ChangeStartMode", new object[] { mode });
+            var result = service.InvokeMethod("ChangeStartMode", new object[] { ToWmiStartMode(mode) });
             var returnCode = Convert.ToUInt32(result);
             if (returnCode == 0)
             {

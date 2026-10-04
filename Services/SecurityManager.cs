@@ -39,7 +39,7 @@ public class SecurityManager
 
             if (enabled)
             {
-                Invoke(svc, "ChangeStartMode", "Automatic");
+                Invoke(svc, "ChangeStartMode", "Automatic"); // (not "Auto": see SvcManager.ToWmiStartMode)
                 Invoke(svc, "StartService");
             }
             else

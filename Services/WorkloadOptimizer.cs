@@ -12,12 +12,21 @@ namespace BgOptimizer.Services;
 /// </summary>
 internal class WorkloadOptimizer
 {
-    private const int ShortIdleSamples = 3;   // ~6s at the 2s refresh tick
-    private const int LongIdleSamples = 150;  // ~5 minutes
     private const double IdleCpuThreshold = 0.5;
     private const long DefaultMinMemoryBytes = 30L * 1024 * 1024;
 
+    private readonly int _shortIdleSamples;
+    private readonly int _longIdleSamples;
     private readonly Dictionary<int, int> _idleStreaks = new();
+
+    /// <param name="tickSeconds">Refresh interval; the idle thresholds stay ~6s / ~5min whatever it is.
+    /// At least 3 samples are always required so one quiet sample never counts as idle.</param>
+    public WorkloadOptimizer(int tickSeconds = 2)
+    {
+        tickSeconds = Math.Max(1, tickSeconds);
+        _shortIdleSamples = Math.Max(3, (int)Math.Ceiling(6.0 / tickSeconds));
+        _longIdleSamples = (int)Math.Ceiling(300.0 / tickSeconds);
+    }
 
     /// <summary>
     /// The window the user is using is rarely one process: Electron apps put the UI in
@@ -67,12 +76,12 @@ internal class WorkloadOptimizer
     public List<ProcessEntry> GetIdleCandidates(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground, long minMemoryBytes = DefaultMinMemoryBytes) =>
         processes.Where(p => IsEligible(p, foreground)
             && p.MemoryBytes >= minMemoryBytes
-            && _idleStreaks.GetValueOrDefault(p.Pid) >= ShortIdleSamples)
+            && _idleStreaks.GetValueOrDefault(p.Pid) >= _shortIdleSamples)
             .ToList();
 
     public List<ProcessEntry> GetLongIdleCandidates(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground, long minMemoryBytes = DefaultMinMemoryBytes) =>
         processes.Where(p => IsEligible(p, foreground)
             && p.MemoryBytes >= minMemoryBytes
-            && _idleStreaks.GetValueOrDefault(p.Pid) >= LongIdleSamples)
+            && _idleStreaks.GetValueOrDefault(p.Pid) >= _longIdleSamples)
             .ToList();
 }
