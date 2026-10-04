@@ -59,6 +59,12 @@ Minimizing the window sends it to the system tray (look for the blue "B" icon �
 
 Only one copy of the app runs at a time: starting a second copy exits immediately without a message, so look for the tray icon of the running one instead.
 
+### Saved settings
+
+These choices are remembered between launches, in `%LocalAppData%\BgOptimizer\settings.json`, and saved the moment you change them (not only on exit, so a crash or kill can't lose them): the language, **Auto-Optimize** on/off, its free-RAM threshold, **Allow suspending long-idle apps**, **Auto restore point before risky changes**, and **Persist across restarts** (next to Apply Priority).
+
+Two things are deliberately not remembered. **Allow throttling interactive apps** starts unticked on every launch, because it is the override that can make browsers and shell surfaces lag. The priority dropdown also starts at Normal. If Auto-Optimize and the suspend option were left on, they are on again at the next launch, and the suspend tier still asks for confirmation the first time it is about to freeze something in each session. A missing, corrupt or hand-edited settings file is ignored field by field: unusable values fall back to the defaults (everything unattended is off, language English, threshold 2 GB). To reset everything, exit the app and delete `settings.json`.
+
 ## Safety
 
 This app runs elevated (admin) because managing services and killing other processes requires it — which also means it *could* be used to break things if you're not careful. Several layers of protection:
@@ -131,13 +137,13 @@ dotnet publish BgOptimizer.csproj -c Release -r win-x64 --self-contained true -o
 powershell -ExecutionPolicy Bypass -File installer\Install-Shortcut.ps1
 ```
 
-To update, exit the app, publish again and re-run the script. To uninstall, exit the app, then delete `C:\Program Files\BgOptimizer` and the two `Background Optimizer.lnk` shortcuts (in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs` and on the public Desktop). Optionally also delete `%LocalAppData%\BgOptimizer`. Changes the app made to Windows (persistent priority rules, firewall rules, tweaks, the hibernate setting) are not removed: undo them in the app first.
+To update, exit the app, publish again and re-run the script. To uninstall, exit the app, then delete `C:\Program Files\BgOptimizer` and the two `Background Optimizer.lnk` shortcuts (in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs` and on the public Desktop). Optionally also delete `%LocalAppData%\BgOptimizer` (your saved settings and the frozen-process list). Changes the app made to Windows (persistent priority rules, firewall rules, tweaks, the hibernate setting) are not removed: undo them in the app first.
 
 The app still prompts for admin on every launch either way — that's the manifest (`app.manifest`), not the shortcut.
 
 ### Inno Setup installer (unsigned)
 
-[installer/BgOptimizer.iss](installer/BgOptimizer.iss) builds a conventional `BgOptimizer-Setup-<version>.exe`. CI builds it on every push and uploads it as the `BgOptimizer-Setup` artifact; to build it yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), publish as above, then run `ISCC.exe /DAppVersion=1.0.0 installer\BgOptimizer.iss` (output goes to `installer\Output\`). It installs for all users (it needs admin), offers an optional desktop icon, has a wizard in all seven app languages, offers to close a running copy before upgrading, and registers an uninstaller. Uninstalling removes the app and `%LocalAppData%\BgOptimizer`, and leaves Windows changes the app made, as above.
+[installer/BgOptimizer.iss](installer/BgOptimizer.iss) builds a conventional `BgOptimizer-Setup-<version>.exe`. CI builds it on every push and uploads it as the `BgOptimizer-Setup` artifact; to build it yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), publish as above, then run `ISCC.exe /DAppVersion=1.0.0 installer\BgOptimizer.iss` (output goes to `installer\Output\`). It installs for all users (it needs admin), offers an optional desktop icon, has a wizard in all seven app languages, offers to close a running copy before upgrading, and registers an uninstaller. Uninstalling removes the app and `%LocalAppData%\BgOptimizer` (including your saved settings, so they reset if you reinstall later), and leaves Windows changes the app made, as above.
 
 **It is not code-signed.** Expect a SmartScreen warning, and on a machine with Smart App Control enforcing it may be blocked outright (see above). Until the exe, dll and `Setup.exe` are signed, prefer the shortcut script on such a machine.
 
@@ -182,7 +188,7 @@ Or run the compiled executable directly: `bin/Debug/net10.0-windows/BgOptimizer.
 dotnet test tests/BgOptimizer.Tests
 ```
 
-xUnit tests cover the safety rules (protected / interactive / security-tool / audio-app lists, the live-identity check on kill, priority, suspend and resume, firewall-block refusals), the idle-detection logic (including that its thresholds hold at a different refresh interval), the saved list of frozen processes and its recycled-PID check, the service start-mode mapping, the Category classifier, and the parsers for `powercfg` output and firewall rules (checked with non-English labels). Tests that act on a process only ever touch a `ping.exe` child they start themselves; nothing changes system settings. CI runs them on every push.
+xUnit tests cover the safety rules (protected / interactive / security-tool / audio-app lists, the live-identity check on kill, priority, suspend and resume, firewall-block refusals), the idle-detection logic (including that its thresholds hold at a different refresh interval), the saved list of frozen processes and its recycled-PID check, the saved settings (round trip, corrupt/missing file, invalid values), the service start-mode mapping, the Category classifier, and the parsers for `powercfg` output and firewall rules (checked with non-English labels). Tests that act on a process only ever touch a `ping.exe` child they start themselves; nothing changes system settings. CI runs them on every push.
 
 ## Project structure
 
@@ -199,6 +205,7 @@ Services/
   SvcManager.cs              Windows service enumeration and start-type/stop/start control (via WMI)
   ProtectedItems.cs         The safety deny-lists (protected, interactive, security-tool, audio apps)
   SuspendedStore.cs         Saves frozen process IDs to disk so a crash can't leave them frozen
+  AppSettings.cs            Remembered checkbox/threshold/language choices (settings.json)
   BatteryManager.cs         Battery health and the hibernate-on-lid-close / hibernate-after setting
   ItemClassifier.cs         Best-effort Category labeling for Startup Apps/Services
   PriorityPersistence.cs    Persistent process priority via Image File Execution Options

@@ -57,9 +57,17 @@ public partial class MainWindow : Window
     private readonly List<double> _cpuHistory = new();
     private readonly List<double> _memHistory = new();
 
+    // True while saved settings are being applied to the controls, so that doesn't trigger a save per control.
+    private bool _loadingSettings;
+
     public MainWindow()
     {
+        // The language is applied before the UI is built so it never flashes the default one first.
+        var settings = AppSettings.Load();
+        Loc.Instance.Language = settings.Language;
+
         InitializeComponent();
+        ApplySettings(settings);
         PriorityPersistence.ClearInteractiveRules();
         SetupTrayIcon();
 
@@ -114,6 +122,45 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { Log(ex.Message); }
         finally { _tickRunning = false; }
+    }
+
+    // ---------- Saved settings ----------
+
+    private void ApplySettings(AppSettings s)
+    {
+        _loadingSettings = true;
+        try
+        {
+            AutoOptimizeCheck.IsChecked = s.AutoOptimize;
+            AutoOptimizeThresholdBox.Text = s.FreeRamThresholdGb;
+            AllowSuspendCheck.IsChecked = s.AllowSuspend;
+            AutoRestorePointCheck.IsChecked = s.AutoRestorePoint;
+            PersistPriorityCheck.IsChecked = s.PersistPriority;
+        }
+        finally { _loadingSettings = false; }
+
+        // Saved on every change rather than on exit, so a crash or kill can't lose a choice. Unchecking
+        // AllowSuspend in code (declined consent dialog) raises Unchecked too, so that is saved as well.
+        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck })
+        {
+            box.Checked += (_, _) => SaveSettings();
+            box.Unchecked += (_, _) => SaveSettings();
+        }
+        AutoOptimizeThresholdBox.TextChanged += (_, _) => SaveSettings();
+    }
+
+    private void SaveSettings()
+    {
+        if (_loadingSettings) return;
+        new AppSettings
+        {
+            Language = Loc.Instance.Language,
+            AutoOptimize = AutoOptimizeCheck.IsChecked == true,
+            FreeRamThresholdGb = AutoOptimizeThresholdBox.Text,
+            AllowSuspend = AllowSuspendCheck.IsChecked == true,
+            AutoRestorePoint = AutoRestorePointCheck.IsChecked == true,
+            PersistPriority = PersistPriorityCheck.IsChecked == true,
+        }.Save();
     }
 
     // ---------- System stats ----------
@@ -202,7 +249,10 @@ public partial class MainWindow : Window
     private void LanguageCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (LanguageCombo.SelectedItem is Loc.LanguageOption option)
+        {
             Loc.Instance.Language = option.Code;
+            SaveSettings();
+        }
     }
 
     // ---------- System tray ----------
