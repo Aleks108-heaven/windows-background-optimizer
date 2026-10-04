@@ -43,3 +43,31 @@ jobs:
         with:
           name: BgOptimizer
           path: publish/
+
+      # The installer is unsigned: SmartScreen / Smart App Control will warn about it until the
+      # exe, dll and Setup.exe are code-signed.
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content BgOptimizer.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if (-not $version) { throw 'No <Version> found in BgOptimizer.csproj' }
+
+          $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $found = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $found) {
+              choco install innosetup --yes --no-progress
+              $found = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            }
+            $iscc = $found
+          } else { $iscc = $iscc.Source }
+
+          & $iscc /Qp "/DAppVersion=$version" installer/BgOptimizer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BgOptimizer-Setup
+          path: installer/Output/*.exe
+          if-no-files-found: error
