@@ -6,3 +6,8 @@ installer/Output/
 
 # Windows Explorer per-folder customization (local only, not app content)
 desktop.ini
+
+# Local diagnostics / tooling output (can contain machine-identifying info)
+battery-report.html
+sleepstudy-report.html
+*.plugin
