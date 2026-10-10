@@ -6,9 +6,10 @@ namespace BgOptimizer.Services;
 /// Picks throttle/suspend/hog-restart candidates for "AI Workload Mode" by
 /// watching actual CPU idleness rather than guessing app names — a process
 /// that's genuinely doing nothing right now is safe to deprioritize, whatever
-/// it's called. This keeps LM Studio (busy while inferencing) and the browser
-/// (already exempt via ProtectedItems.IsInteractive, and never selected even
-/// if it briefly idles) both out of reach automatically.
+/// it's called. CPU idleness alone is not enough for the local-AI stack, though:
+/// LM Studio and agent runtimes sit near 0% CPU while waiting on each other or on
+/// the GPU, so they are exempt by name (ProtectedItems.IsAiTool), as is the browser
+/// (ProtectedItems.IsInteractive, never selected even if it briefly idles).
 /// </summary>
 internal class WorkloadOptimizer
 {
@@ -71,7 +72,8 @@ internal class WorkloadOptimizer
     }
 
     private static bool IsEligible(ProcessEntry p, IReadOnlySet<int> foreground) =>
-        !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name) && !foreground.Contains(p.Pid);
+        !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name)
+        && !ProtectedItems.IsAiTool(p.Name) && !foreground.Contains(p.Pid);
 
     public List<ProcessEntry> GetIdleCandidates(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground, long minMemoryBytes = DefaultMinMemoryBytes) =>
         processes.Where(p => IsEligible(p, foreground)

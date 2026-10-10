@@ -65,6 +65,8 @@ public partial class MainWindow : Window
         // The language is applied before the UI is built so it never flashes the default one first.
         var settings = AppSettings.Load();
         Loc.Instance.Language = settings.Language;
+        ActionLog.Write($"=== Started. AutoOptimize={settings.AutoOptimize}, AllowSuspend={settings.AllowSuspend}, " +
+                        $"FreeRamThresholdGb={settings.FreeRamThresholdGb}, PersistPriority={settings.PersistPriority}");
 
         InitializeComponent();
         ApplySettings(settings);
@@ -74,6 +76,8 @@ public partial class MainWindow : Window
         ProcessGrid.ItemsSource = _processes;
         StartupGrid.ItemsSource = _startupItems;
         ServiceGrid.ItemsSource = _services;
+        foreach (var target in CleanupService.Targets()) _cleanupItems.Add(new CleanupItem(target));
+        CleanupList.ItemsSource = _cleanupItems;
 
         LanguageCombo.ItemsSource = Loc.Languages;
         LanguageCombo.SelectedItem = Loc.Languages.First(l => l.Code == Loc.Instance.Language);
@@ -98,6 +102,34 @@ public partial class MainWindow : Window
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(RefreshSeconds) };
         _refreshTimer.Tick += async (_, _) => await TickAsync();
         _refreshTimer.Start();
+
+        // Idle while hidden in the tray with nothing to supervise; wake instantly when shown again.
+        IsVisibleChanged += (_, _) => ApplyRefreshPolicy();
+        AutoOptimizeCheck.Checked += (_, _) => ApplyRefreshPolicy();
+        AutoOptimizeCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
+        ApplyRefreshPolicy();
+    }
+
+    private void ApplyRefreshPolicy()
+    {
+        if (_closed) return;
+        var run = RefreshPolicy.ShouldRun(IsVisible, AutoOptimizeCheck.IsChecked == true);
+        if (run == _refreshTimer.IsEnabled) return;
+
+        if (run)
+        {
+            _refreshTimer.Start();
+            ActionLog.Write("Refresh resumed (window shown or Auto-Optimize turned on).");
+            _ = TickAsync(); // show fresh data immediately instead of after the first interval
+        }
+        else
+        {
+            // Auto-Optimize releases what it changed from the tick; with no more ticks coming, do it now.
+            if (_autoThrottled.Count > 0 || _autoSuspended.Count > 0) RestoreAutoThrottled();
+            _belowThreshold = false;
+            _refreshTimer.Stop();
+            ActionLog.Write("Idle: window hidden and Auto-Optimize off, refresh paused.");
+        }
     }
 
     private bool _closed;
@@ -302,6 +334,7 @@ public partial class MainWindow : Window
         {
             _closed = true;
             _refreshTimer.Stop();
+            ActionLog.Write($"=== Exiting. Releasing {_autoThrottled.Count} throttled and {_autoSuspended.Count} suspended process(es).");
             RestoreAutoThrottled();
             _trayIcon.Dispose();
         };
@@ -331,6 +364,7 @@ public partial class MainWindow : Window
 
     private void AddLog(string message, bool failed)
     {
+        ActionLog.Write((failed ? "FAILED " : "") + message);
         var item = new System.Windows.Controls.ListBoxItem
         {
             Content = $"[{DateTime.Now:HH:mm:ss}] {(failed ? "✖ " : "")}{message}",
@@ -556,6 +590,7 @@ public partial class MainWindow : Window
 
         if (AutoOptimizeCheck.IsChecked != true)
         {
+            _belowThreshold = false;
             if (_autoThrottled.Count > 0 || _autoSuspended.Count > 0) RestoreAutoThrottled();
             return;
         }
@@ -572,6 +607,11 @@ public partial class MainWindow : Window
 
         if (freeBytes < thresholdBytes)
         {
+            if (!_belowThreshold)
+            {
+                _belowThreshold = true;
+                ActionLog.Write($"Memory pressure: {FormatGb(freeBytes)} GB free is below the {thresholdGb:0.##} GB threshold; Auto-Optimize is acting.");
+            }
             foreach (var entry in _workloadOptimizer.GetIdleCandidates(_processes, foreground))
             {
                 if (_autoThrottled.ContainsKey(entry.Pid)) continue;
@@ -623,9 +663,18 @@ public partial class MainWindow : Window
         }
         else if (freeBytes > thresholdBytes + HysteresisBytes)
         {
+            if (_belowThreshold)
+            {
+                _belowThreshold = false;
+                ActionLog.Write($"Memory pressure over: {FormatGb(freeBytes)} GB free; releasing anything Auto-Optimize changed.");
+            }
             RestoreAutoThrottled();
         }
     }
+
+    // Edge-detects the free-RAM threshold so the action log records when pressure began and ended
+    // without one line per tick.
+    private bool _belowThreshold;
 
     private void RestoreAutoThrottled()
     {
@@ -722,23 +771,45 @@ public partial class MainWindow : Window
 
     private void RefreshStartup_Click(object sender, RoutedEventArgs e) => RefreshStartup();
 
-    private void EnableStartup_Click(object sender, RoutedEventArgs e)
+    // Restore points (a WMI call that can take many seconds, or stall while Volume Shadow Copy is busy),
+    // schtasks.exe and service WMI/SCM calls all block. They used to run on the UI thread, which is what
+    // made the window "not respond" while a startup item was being disabled. They now run on a worker
+    // while the UI shows a wait cursor; a second action is ignored until the first has finished.
+    private bool _actionBusy;
+
+    private bool BeginBusy()
+    {
+        if (_actionBusy) return false;
+        _actionBusy = true;
+        System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+        return true;
+    }
+
+    private void EndBusy()
+    {
+        _actionBusy = false;
+        System.Windows.Input.Mouse.OverrideCursor = null;
+    }
+
+    private static readonly TimeSpan RestorePointTimeout = TimeSpan.FromSeconds(90);
+
+    /// <summary>Creates a restore point off the UI thread; a stuck WMI call is abandoned after 90 s, not waited on forever.</summary>
+    private static async Task<ActionResult> CreateRestorePointAsync(string description)
+    {
+        var work = Task.Run(() => SystemRestoreService.CreateRestorePoint(description));
+        return await Task.WhenAny(work, Task.Delay(RestorePointTimeout)) == work
+            ? await work
+            : new ActionResult(false, "Msg_RestorePointFailed", "timed out");
+    }
+
+    private async void EnableStartup_Click(object sender, RoutedEventArgs e)
     {
         var selected = StartupGrid.SelectedItems.Cast<StartupEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
-
-        foreach (var entry in selected)
-        {
-            var wasEnabled = entry.Enabled;
-            var result = _startupManager.SetEnabled(entry, true);
-            Log(result);
-            if (result.Ok) _undoStack.Push(() => _startupManager.SetEnabled(entry, wasEnabled));
-        }
-
-        RefreshStartup();
+        await SetStartupEnabledAsync(selected, enable: true, restorePointDescription: null);
     }
 
-    private void DisableStartup_Click(object sender, RoutedEventArgs e)
+    private async void DisableStartup_Click(object sender, RoutedEventArgs e)
     {
         var selected = StartupGrid.SelectedItems.Cast<StartupEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
@@ -748,22 +819,91 @@ public partial class MainWindow : Window
                 danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
             return;
 
-        if (AutoRestorePointCheck.IsChecked == true)
-            Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: before disabling startup items"));
+        await SetStartupEnabledAsync(selected, enable: false,
+            AutoRestorePointCheck.IsChecked == true ? "BgOptimizer: before disabling startup items" : null);
+    }
 
-        foreach (var entry in selected)
+    private async Task SetStartupEnabledAsync(List<StartupEntry> selected, bool enable, string? restorePointDescription)
+    {
+        if (!BeginBusy()) return;
+        try
         {
-            var wasEnabled = entry.Enabled;
-            var result = _startupManager.SetEnabled(entry, false);
-            Log(result);
-            if (result.Ok) _undoStack.Push(() => _startupManager.SetEnabled(entry, wasEnabled));
+            if (restorePointDescription != null)
+                Log(await CreateRestorePointAsync(restorePointDescription));
+
+            var results = await Task.Run(() => selected.Select(entry =>
+            {
+                var wasEnabled = entry.Enabled;
+                return (Entry: entry, WasEnabled: wasEnabled, Result: _startupManager.SetEnabled(entry, enable));
+            }).ToList());
+
+            foreach (var (entry, wasEnabled, result) in results)
+            {
+                Log(result);
+                if (result.Ok) _undoStack.Push(() => _startupManager.SetEnabled(entry, wasEnabled));
+            }
         }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { EndBusy(); }
 
         RefreshStartup();
     }
 
-    private void CreateRestorePoint_Click(object sender, RoutedEventArgs e) =>
-        Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: manual restore point"));
+    private async void CreateRestorePoint_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginBusy()) return;
+        try { Log(await CreateRestorePointAsync("BgOptimizer: manual restore point")); }
+        finally { EndBusy(); }
+    }
+
+    // ---------- Cleanup ----------
+
+    private readonly ObservableCollection<CleanupItem> _cleanupItems = new();
+
+    // Walking cache folders can take a while, so both scanning and deleting run on a worker; the rows update as each finishes.
+    private async void CleanupScan_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginBusy()) return;
+        try
+        {
+            long bytes = 0; var files = 0;
+            foreach (var item in _cleanupItems.ToList())
+            {
+                var scan = await Task.Run(() => CleanupService.Scan(item.Target));
+                item.SetScan(scan);
+                if (item.Selected) { bytes += scan.Bytes; files += scan.Files; }
+            }
+            Log(Loc.Instance.Format("Msg_CleanupScanned", CleanupService.FormatBytes(bytes), files));
+        }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { EndBusy(); }
+    }
+
+    private async void CleanupRun_Click(object sender, RoutedEventArgs e)
+    {
+        var chosen = _cleanupItems.Where(i => i.Selected).ToList();
+        if (chosen.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
+
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_ConfirmTitle"], Loc.Instance["Dlg_ConfirmCleanupMsg"],
+                chosen.Select(i => i.Name).ToList(), danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+            return;
+
+        if (!BeginBusy()) return;
+        try
+        {
+            long total = 0;
+            foreach (var item in chosen)
+            {
+                var run = await Task.Run(() => CleanupService.Clean(item.Target));
+                total += run.BytesFreed;
+                Log(Loc.Instance.Format("Msg_CleanupDone", CleanupService.FormatBytes(run.BytesFreed), item.Name, run.Deleted, run.Skipped));
+                item.SetScan(await Task.Run(() => CleanupService.Scan(item.Target))); // what is left (in-use files stay)
+            }
+            Log(Loc.Instance.Format("Msg_CleanupTotal", CleanupService.FormatBytes(total)));
+        }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { EndBusy(); }
+    }
 
     // ---------- Security ----------
 
@@ -969,7 +1109,7 @@ public partial class MainWindow : Window
 
     private void RefreshServices_Click(object sender, RoutedEventArgs e) => RefreshServices();
 
-    private void SetServiceMode(string mode, bool needsConfirm)
+    private async Task SetServiceMode(string mode, bool needsConfirm)
     {
         var selected = ServiceGrid.SelectedItems.Cast<ServiceEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
@@ -989,27 +1129,37 @@ public partial class MainWindow : Window
             if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_ConfirmTitle"], message, items,
                     danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
                 return;
-
-            if (AutoRestorePointCheck.IsChecked == true)
-                Log(SystemRestoreService.CreateRestorePoint($"BgOptimizer: services set to {mode}"));
         }
 
-        foreach (var entry in targets)
+        if (!BeginBusy()) return;
+        try
         {
-            var previousStartType = entry.StartType;
-            var result = _svcManager.SetStartMode(entry, mode);
-            Log(result);
-            if (result.Ok) _undoStack.Push(() => _svcManager.SetStartMode(entry, previousStartType));
+            if (needsConfirm && AutoRestorePointCheck.IsChecked == true)
+                Log(await CreateRestorePointAsync($"BgOptimizer: services set to {mode}"));
+
+            var results = await Task.Run(() => targets.Select(entry =>
+            {
+                var previousStartType = entry.StartType;
+                return (Entry: entry, Previous: previousStartType, Result: _svcManager.SetStartMode(entry, mode));
+            }).ToList());
+
+            foreach (var (entry, previousStartType, result) in results)
+            {
+                Log(result);
+                if (result.Ok) _undoStack.Push(() => _svcManager.SetStartMode(entry, previousStartType));
+            }
         }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { EndBusy(); }
 
         RefreshServices();
     }
 
-    private void ServiceAuto_Click(object sender, RoutedEventArgs e) => SetServiceMode("Auto", needsConfirm: false);
-    private void ServiceManual_Click(object sender, RoutedEventArgs e) => SetServiceMode("Manual", needsConfirm: false);
-    private void ServiceDisabled_Click(object sender, RoutedEventArgs e) => SetServiceMode("Disabled", needsConfirm: true);
+    private async void ServiceAuto_Click(object sender, RoutedEventArgs e) => await SetServiceMode("Auto", needsConfirm: false);
+    private async void ServiceManual_Click(object sender, RoutedEventArgs e) => await SetServiceMode("Manual", needsConfirm: false);
+    private async void ServiceDisabled_Click(object sender, RoutedEventArgs e) => await SetServiceMode("Disabled", needsConfirm: true);
 
-    private void ServiceStop_Click(object sender, RoutedEventArgs e)
+    private async void ServiceStop_Click(object sender, RoutedEventArgs e)
     {
         var selected = ServiceGrid.SelectedItems.Cast<ServiceEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
@@ -1027,15 +1177,22 @@ public partial class MainWindow : Window
                 danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
             return;
 
-        if (AutoRestorePointCheck.IsChecked == true)
-            Log(SystemRestoreService.CreateRestorePoint("BgOptimizer: before stopping services"));
-
-        foreach (var entry in targets)
+        if (!BeginBusy()) return;
+        try
         {
-            var result = _svcManager.Stop(entry);
-            Log(result);
-            if (result.Ok) _undoStack.Push(() => _svcManager.Start(entry));
+            if (AutoRestorePointCheck.IsChecked == true)
+                Log(await CreateRestorePointAsync("BgOptimizer: before stopping services"));
+
+            // Each Stop waits up to 10 s for the service, so a batch can take a while: keep it off the UI thread.
+            var results = await Task.Run(() => targets.Select(entry => (Entry: entry, Result: _svcManager.Stop(entry))).ToList());
+            foreach (var (entry, result) in results)
+            {
+                Log(result);
+                if (result.Ok) _undoStack.Push(() => _svcManager.Start(entry));
+            }
         }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { EndBusy(); }
 
         RefreshServices();
     }

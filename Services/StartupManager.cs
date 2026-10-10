@@ -203,6 +203,8 @@ public class StartupManager
         taskPath.StartsWith(MicrosoftTaskPrefix, StringComparison.OrdinalIgnoreCase)
         || string.Equals(taskPath, MicrosoftTaskPrefix.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
+    private const int SchtasksTimeoutMs = 15_000;
+
     private static ActionResult SetScheduledTaskEnabled(StartupEntry entry, bool enabled)
     {
         var psi = new ProcessStartInfo(SystemTools.Path("schtasks.exe"))
@@ -219,8 +221,17 @@ public class StartupManager
         using var proc = Process.Start(psi);
         if (proc == null) return new ActionResult(false, "Msg_StartupFailed", entry.Name, "schtasks.exe failed to start");
 
-        var error = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
+        // Bounded wait: schtasks can stall on a busy Task Scheduler service, and an unbounded wait here
+        // used to hang whatever was waiting on this call. stderr is read concurrently so a full pipe
+        // can't block the child either.
+        var errorTask = proc.StandardError.ReadToEndAsync();
+        if (!proc.WaitForExit(SchtasksTimeoutMs))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { /* already exiting */ }
+            return new ActionResult(false, "Msg_StartupFailed", entry.Name, "schtasks.exe timed out");
+        }
+        proc.WaitForExit(); // flush the redirected stream after a timed wait
+        var error = errorTask.GetAwaiter().GetResult();
         if (proc.ExitCode != 0)
             return new ActionResult(false, "Msg_StartupFailed", entry.Name, error.Trim());
 

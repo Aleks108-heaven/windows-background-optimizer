@@ -245,6 +245,39 @@
                 </DockPanel>
             </TabItem>
 
+            <!-- CLEANUP TAB -->
+            <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Cleanup]}">
+                <DockPanel Margin="8">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_CleanupScan]}" Click="CleanupScan_Click"/>
+                        <Button Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Btn_CleanupRun]}" Click="CleanupRun_Click"/>
+                    </WrapPanel>
+                    <TextBlock DockPanel.Dock="Top" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                               Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Hint_Cleanup]}"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
+                        <ItemsControl x:Name="CleanupList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox IsChecked="{Binding Selected, Mode=TwoWay}" AutomationProperties.Name="{Binding Name}" VerticalContentAlignment="Top">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"/>
+                                            </StackPanel>
+                                        </CheckBox>
+                                        <TextBlock Grid.Column="1" Text="{Binding SizeDisplay}" VerticalAlignment="Top" Margin="16,0,8,0"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </TabItem>
+
             <!-- SECURITY TAB -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Security]}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">

@@ -171,6 +171,8 @@ public class ProcessMonitor
     {
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        if (ProtectedItems.IsAiTool(name))
+            return new ActionResult(false, "Msg_ProcessAiTool", name);
         try
         {
             using var proc = Process.GetProcessById(pid);
@@ -193,6 +195,9 @@ public class ProcessMonitor
         // Security/system-critical processes are never throttleable, regardless of the caller's intent.
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        // Local-AI tools can't be slowed down even with the interactive override ticked.
+        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsAiTool(name))
+            return new ActionResult(false, "Msg_ProcessAiTool", name);
         if (!allowInteractiveThrottle && priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsInteractive(name))
             return new ActionResult(false, "Msg_ProcessInteractive", name);
         try
@@ -226,6 +231,8 @@ public class ProcessMonitor
     {
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
+        if (ProtectedItems.IsAiTool(name))
+            return new ActionResult(false, "Msg_ProcessAiTool", name);
         if (ProtectedItems.IsInteractive(name) || ProtectedItems.IsSecurityTool(name))
             return new ActionResult(false, "Msg_ProcessInteractive", name);
         try

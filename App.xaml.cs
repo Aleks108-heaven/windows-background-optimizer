@@ -15,6 +15,11 @@ public partial class App : System.Windows.Application
             Shutdown();
             return;
         }
+        // Observe only (Handled stays false), so crash behaviour is unchanged but the cause is on record.
+        DispatcherUnhandledException += (_, args) =>
+            Services.ActionLog.Write("UNHANDLED UI exception: " + args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            Services.ActionLog.Write("UNHANDLED exception (terminating=" + args.IsTerminating + "): " + args.ExceptionObject);
         base.OnStartup(e);
     }
 

@@ -39,6 +39,10 @@ internal static class PriorityPersistence
             return new ActionResult(false, "Msg_ProcessProtectedModify", processName);
 
         if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
+            && ProtectedItems.IsAiTool(processName))
+            return new ActionResult(false, "Msg_ProcessAiTool", processName);
+
+        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
             && ProtectedItems.IsInteractive(processName))
             return new ActionResult(false, "Msg_ProcessInteractive", processName);
 

@@ -82,6 +82,60 @@ public class SafetyTests
         Assert.False(ProtectedItems.IsSecurityTool("notepad"));
     }
 
+    // A model host or agent runtime idles near 0% CPU while it waits on the GPU or on another process, so
+    // it must never reach the trim/throttle/suspend paths (a frozen LM Studio server stalls every agent).
+    [Theory]
+    [InlineData("LM Studio")]
+    [InlineData("LM Studio.exe")]
+    [InlineData("lms")]
+    [InlineData("llama-server")]
+    [InlineData("ollama_llama_server")]
+    [InlineData("ollama")]
+    [InlineData("python")]
+    [InlineData("node.exe")]
+    public void LocalAiToolsAreRecognised(string name) =>
+        Assert.True(ProtectedItems.IsAiTool(name));
+
+    [Theory]
+    [InlineData("notepad")]
+    [InlineData("chrome")]
+    [InlineData("AsusOptimization")]
+    public void OrdinaryAppsAreNotAiTools(string name) =>
+        Assert.False(ProtectedItems.IsAiTool(name));
+
+    [Fact]
+    public void AiToolIsNeverAnIdleCandidateNoMatterHowLongItIdles()
+    {
+        var wo = new WorkloadOptimizer(tickSeconds: 5);
+        var ai = new ProcessEntry { Pid = 1, Name = "LM Studio", MemoryBytes = 8L * 1024 * 1024 * 1024, CpuKnown = true, CpuPercent = 0 };
+        var other = new ProcessEntry { Pid = 2, Name = "idleapp", MemoryBytes = 100L * 1024 * 1024, CpuKnown = true, CpuPercent = 0 };
+        var list = new List<ProcessEntry> { ai, other };
+        var none = new HashSet<int>();
+        for (var i = 0; i < 80; i++) wo.UpdateStreaks(list, none); // 80 x 5 s, well past the ~5 min suspend threshold
+        Assert.Equal(new[] { 2 }, wo.GetIdleCandidates(list, none).Select(p => p.Pid));
+        Assert.Equal(new[] { 2 }, wo.GetLongIdleCandidates(list, none).Select(p => p.Pid));
+    }
+
+    [Fact]
+    public void AiToolCannotBeTrimmedSuspendedOrSlowedEvenWithOverride()
+    {
+        // The deny-list answers before any process is opened, so the test's own PID is never touched.
+        var pid = Environment.ProcessId;
+        Assert.Equal("Msg_ProcessAiTool", ProcessMonitor.TrimMemory(pid, "LM Studio").MessageKey);
+        Assert.Equal("Msg_ProcessAiTool", ProcessMonitor.SuspendProcess(pid, "LM Studio").MessageKey);
+        Assert.Equal("Msg_ProcessAiTool", ProcessMonitor.SetPriority(pid, "llama-server", ProcessPriorityClass.BelowNormal, allowInteractiveThrottle: true).MessageKey);
+        Assert.Equal("Msg_ProcessAiTool", ProcessMonitor.SetPriority(pid, "node", ProcessPriorityClass.Idle, allowInteractiveThrottle: true).MessageKey);
+        Assert.Equal("Msg_ProcessAiTool", PriorityPersistence.SetPersistent("ollama", ProcessPriorityClass.BelowNormal).MessageKey);
+    }
+
+    [Fact]
+    public void RaisingAiToolPriorityIsNotBlockedByTheAiDenyList()
+    {
+        // Name mismatch with the live process is what stops this one, proving the AI list didn't.
+        var r = ProcessMonitor.SetPriority(Environment.ProcessId, "LM Studio", ProcessPriorityClass.AboveNormal);
+        Assert.NotEqual("Msg_ProcessAiTool", r.MessageKey);
+    }
+
     [Fact]
     public void CriticalServicesAreProtected()
     {

@@ -56,6 +56,31 @@ internal static class ProtectedItems
             ? processName[..^4] : processName)
         || IsAudioApp(processName);
 
+    // Local-AI stack: model hosts (LM Studio, Ollama, llama.cpp, ...) and the runtimes that agents are
+    // written in. They look idle to the CPU-based detector while they wait on each other (an agent
+    // waiting for a completion, a server waiting for the next request, or inference running on the GPU),
+    // so trimming, throttling or freezing one stalls the whole pipeline, and a trimmed memory-mapped
+    // model has to be paged back in from disk. Never touched, with no override.
+    public static readonly HashSet<string> AiToolProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "LM Studio", "lms", "lmlink-connector", "llama-server", "llama-cli", "llama-bench",
+        "ollama", "ollama app", "ollama_llama_server", "llamafile", "koboldcpp", "GPT4All", "jan",
+        "msty", "AnythingLLM", "LocalAI", "local-ai", "vllm",
+        // Agent / pipeline runtimes and WSL, where models and agents are often hosted.
+        "python", "pythonw", "node", "deno", "bun", "vmmem", "vmmemWSL", "wslhost", "wslservice",
+    };
+
+    private static readonly string[] AiNameFragments = { "llama", "ollama", "lmstudio", "lm studio", "gpt4all" };
+
+    public static bool IsAiTool(string processName)
+    {
+        var name = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? processName[..^4] : processName;
+        if (AiToolProcessNames.Contains(name)) return true;
+        foreach (var fragment in AiNameFragments)
+            if (name.Contains(fragment, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
     // Third-party AV/EDR/backup/VPN agents: not covered by ProtectedProcessNames (which only
     // lists Microsoft's own critical processes + Defender). These commonly run as low-CPU,
     // idle, non-interactive background services, so without this list they'd be

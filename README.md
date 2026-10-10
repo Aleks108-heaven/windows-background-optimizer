@@ -65,6 +65,18 @@ These choices are remembered between launches, in `%LocalAppData%\BgOptimizer\se
 
 Two things are deliberately not remembered. **Allow throttling interactive apps** starts unticked on every launch, because it is the override that can make browsers and shell surfaces lag. The priority dropdown also starts at Normal. If Auto-Optimize and the suspend option were left on, they are on again at the next launch, and the suspend tier still asks for confirmation the first time it is about to freeze something in each session. A missing, corrupt or hand-edited settings file is ignored field by field: unusable values fall back to the defaults (everything unattended is off, language English, threshold 2 GB). To reset everything, exit the app and delete `settings.json`.
 
+## Action log
+
+Everything the app does is also appended to `%LocalAppData%\BgOptimizer\actions.log` (written straight through to disk, rolled over to `actions.log.1` at 1 MB): start and exit with the Auto-Optimize settings in force, when free RAM crosses the threshold, every throttle/trim/suspend/resume and refusal, and unhandled errors. The on-screen log is capped and disappears on exit; this one survives a crash or a hard reset, so after a freeze it shows whether the app was running and what it had touched. Lines are in the UI language you had selected.
+
+## Idle when hidden
+
+Minimised to the tray, the app stays one click away but stops polling (no process scans, no WMI battery queries) as long as **Auto-Optimize is off**. Opening the window resumes it at once with fresh data. With Auto-Optimize on it keeps running while hidden, because watching memory and releasing what it changed is its standing job; turning Auto-Optimize off while hidden first releases anything it had throttled or frozen, then idles. Both transitions are written to the action log.
+
+## Cleanup
+
+The **Cleanup** tab deletes old, regenerable files. **Scan** shows what each group would free; **Clean selected** asks for confirmation and then deletes. Groups: your temp files and Windows temp (7+ days old), Windows error reports (7+ days), old Windows servicing/Update logs and LM Studio / VS Code logs (30+ days) — all ticked by default — plus GPU shader caches, Edge/Chrome caches and developer package caches (pip, npm, NuGet, Scoop), which start unticked because they are rebuilt or re-downloaded at a cost. It stays inside fixed folders, never follows junctions or symlinks, skips files that are in use, and refuses drive roots and broad folders (profile, Windows, Program Files). Crash dumps, the Recycle Bin, documents and BgOptimizer's own `actions.log` are never touched.
+
 ## Safety
 
 This app runs elevated (admin) because managing services and killing other processes requires it — which also means it *could* be used to break things if you're not careful. Several layers of protection:
@@ -72,6 +84,7 @@ This app runs elevated (admin) because managing services and killing other proce
 1. **Protected list** ([Services/ProtectedItems.cs](Services/ProtectedItems.cs)) — hard-blocks changes to ~40 core Windows processes and services (`csrss`, `lsass`, `svchost`, `explorer`, `RpcSs`, `WinDefend`, `TrustedInstaller`, Windows Defender's engine and related services, etc.). These show as "Protected" in the grids and every action against them is refused, not just warned.
 2. **Interactive-app list** (same file) — browsers, shell surfaces, Task Manager, and dev tools can't be set to Idle/BelowNormal without an explicit override, and are never eligible for automatic throttling or suspension at all (see below) — this is what stops Auto-Optimize from ever repeating the mistake of pinning a browser to Idle priority, which can break things like Cloudflare Turnstile bot verification.
 3. **Security-tool list** (same file) — ~30 common third-party antivirus/EDR/backup/endpoint-management process names (CrowdStrike, SentinelOne, Sophos, ESET, Malwarebytes, Kaspersky, Norton, McAfee, Bitdefender, Veeam, Acronis, and others). These are never eligible for Auto-Optimize's throttling or the auto-suspend tier, or for Laptop saver, with no override — unlike priority changes, freezing a security tool stops it from protecting the machine at all, not just runs it slower.
+3a. **Local-AI list** (same file) — LM Studio (`LM Studio`, `lms`, `llama-server`), Ollama, llama.cpp, koboldcpp and similar model hosts, plus agent runtimes (`python`, `node`, `deno`, `bun`) and WSL (`vmmem`). They sit near 0% CPU while waiting on the GPU or on each other, which the idle detector can't tell apart from "doing nothing", so they are never trimmed, slowed down or suspended — by Auto-Optimize or by hand — with no override. Lowering priority is blocked for them too, including via Persist across restarts.
 4. **Confirmation dialogs** — killing a process, disabling a startup item, disabling a service, stopping a service, or restarting a memory hog all prompt for confirmation before acting. Destructive confirmations default to **Cancel** (and take focus), so a stray Enter can't run the action. Action buttons that need a selection log "Nothing selected" instead of silently doing nothing. The auto-suspend tier additionally asks once, the first time it's about to freeze a process in a session, before proceeding unattended after that.
 5. **Live identity check** — every kill/priority/trim/suspend/resume re-reads the process's real name at the moment of the action and refuses if it no longer matches the grid row (or, for everything except resume, is now on the protected list), so a recycled PID can never redirect an action onto the wrong process. The process list itself also notices a recycled PID (different name or start time) and treats it as a new process, so its name and protected flag are never inherited from the old one.
 6. **Restore Point safety net** — the "Auto restore point before risky changes" checkbox (Startup Apps tab, on by default) creates a System Restore point via the `SystemRestore` WMI class before Disable Startup, Set: Disabled, or Stop Now runs. There's also a manual **Create Restore Point** button for creating one on demand. This is best-effort: if System Restore is off for the system drive, or Windows' own once-per-24-hours throttle kicks in, the app logs it and proceeds anyway rather than blocking your actual request.
@@ -204,6 +217,9 @@ Services/
   StartupManager.cs         Startup item enumeration and enable/disable (Run keys, Startup folders, Scheduled Tasks)
   SvcManager.cs              Windows service enumeration and start-type/stop/start control (via WMI)
   ProtectedItems.cs         The safety deny-lists (protected, interactive, security-tool, audio apps)
+  CleanupService.cs         Age-filtered, junction-safe deletion of temp files, old logs and caches (Cleanup tab)
+  RefreshPolicy.cs          When the periodic refresh runs (visible window or Auto-Optimize on)
+  ActionLog.cs              Persistent action log (%LocalAppData%\BgOptimizer\actions.log, rolls over at 1 MB)
   SuspendedStore.cs         Saves frozen process IDs to disk so a crash can't leave them frozen
   AppSettings.cs            Remembered checkbox/threshold/language choices (settings.json)
   BatteryManager.cs         Battery health and the hibernate-on-lid-close / hibernate-after setting
