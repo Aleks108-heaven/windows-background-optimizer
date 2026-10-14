@@ -35,6 +35,7 @@ internal static class PriorityPersistence
 
     public static ActionResult SetPersistent(string processName, ProcessPriorityClass priority)
     {
+        if (ViewOnlyMode.Block(processName) is { } viewOnly) return viewOnly;
         if (ProtectedItems.IsProcessProtected(processName))
             return new ActionResult(false, "Msg_ProcessProtectedModify", processName);
 
@@ -65,6 +66,7 @@ internal static class PriorityPersistence
 
     public static ActionResult ClearPersistent(string processName)
     {
+        if (ViewOnlyMode.Block(processName) is { } viewOnly) return viewOnly;
         try
         {
             var exe = ExeName(processName);

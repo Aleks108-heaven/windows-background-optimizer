@@ -19,6 +19,15 @@ internal sealed class AppSettings
     public bool AllowSuspend { get; set; }
     public bool AutoRestorePoint { get; set; } = true;
     public bool PersistPriority { get; set; }
+    /// <summary>The app only watches and reports; see <see cref="ViewOnlyMode"/>.</summary>
+    public bool ViewOnly { get; set; }
+    /// <summary>Notify (log, and a tray balloon while hidden) when a load stays above <see cref="LoadLimitPercent"/>.</summary>
+    public bool LoadAlert { get; set; }
+    public int LoadLimitPercent { get; set; } = DefaultLoadLimit;
+
+    public const int MinLoadLimit = 50;
+    public const int MaxLoadLimit = 100;
+    public const int DefaultLoadLimit = 90;
 
     private static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BgOptimizer", "settings.json");
@@ -40,6 +49,7 @@ internal sealed class AppSettings
         try
         {
             path ??= DefaultPath;
+            if (!SafeAppData.IsSafeToWrite(path) || !SafeAppData.IsSafeToWrite(path + ".tmp")) return;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var temp = path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
@@ -55,6 +65,8 @@ internal sealed class AppSettings
         var text = (s.FreeRamThresholdGb ?? "").Trim().Replace(',', '.');
         if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var gb) || gb <= 0 || gb > 1024)
             s.FreeRamThresholdGb = "2";
+        // A hand-edited limit outside the slider's range would put the limit marker off the bar.
+        s.LoadLimitPercent = Math.Clamp(s.LoadLimitPercent, MinLoadLimit, MaxLoadLimit);
         return s;
     }
 }

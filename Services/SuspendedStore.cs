@@ -21,6 +21,7 @@ internal static class SuspendedStore
     public static void Save(IEnumerable<(int Pid, string Name)> frozen, string? path = null)
     {
         path ??= DefaultPath;
+        if (!SafeAppData.IsSafeToWrite(path)) return; // never write or delete through a junction/symlink as admin
         try
         {
             var items = new List<Item>();
@@ -66,7 +67,7 @@ internal static class SuspendedStore
             }
             catch { /* exited, or not accessible: nothing to resume */ }
         }
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
+        try { if (SafeAppData.IsSafeToWrite(path) && File.Exists(path)) File.Delete(path); } catch { }
         return resumed;
     }
 }

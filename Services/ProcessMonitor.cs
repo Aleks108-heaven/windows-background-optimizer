@@ -144,6 +144,7 @@ public class ProcessMonitor
 
     public static ActionResult Kill(int pid, string name)
     {
+        if (ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedKill", name);
         try
@@ -169,6 +170,7 @@ public class ProcessMonitor
     /// </summary>
     public static ActionResult TrimMemory(int pid, string name)
     {
+        if (ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
         if (ProtectedItems.IsAiTool(name))
@@ -190,8 +192,10 @@ public class ProcessMonitor
         }
     }
 
-    public static ActionResult SetPriority(int pid, string name, ProcessPriorityClass priority, bool allowInteractiveThrottle = false)
+    /// <param name="undo">True when putting a priority back (release/undo): that stays possible in view-only mode, so nothing the app slowed earlier is left slowed.</param>
+    public static ActionResult SetPriority(int pid, string name, ProcessPriorityClass priority, bool allowInteractiveThrottle = false, bool undo = false)
     {
+        if (!undo && ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         // Security/system-critical processes are never throttleable, regardless of the caller's intent.
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
@@ -229,6 +233,7 @@ public class ProcessMonitor
     /// </summary>
     public static ActionResult SuspendProcess(int pid, string name)
     {
+        if (ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
         if (ProtectedItems.IsAiTool(name))

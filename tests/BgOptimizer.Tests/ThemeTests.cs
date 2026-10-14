@@ -110,6 +110,50 @@ public class ThemeContrastTests
     public void PrimaryButtonTextMeetsAA() =>
         Assert.True(Ratio(new Swatch(255, 255, 255, 1), C("AccentSolidBrush")) >= 4.5);
 
+    [Fact]
+    public void ThemeDefinesTheCheckBoxSwitchAndScrollBarStyles()
+    {
+        foreach (var k in new[] { "ToggleSwitch", "ScrollThumb", "ScrollPage", "ReadOnlyCheckCell", "LoadBar", "SliderThumb", "SliderFill", "SliderRest" })
+            Assert.Contains(k, Theme.Keys);
+    }
+
+    // The load meter: its fill (normal and over-the-limit) must stand out from the track, and the limit marker must too.
+    [Theory]
+    [InlineData("AccentBrush")]
+    [InlineData("DangerBrush")]
+    [InlineData("TextBrush")]
+    public void LoadBarFillsAndLimitMarkerStandOutFromTheTrack(string fill) =>
+        Assert.True(Ratio(C(fill), C("Panel2Brush")) >= 3.0, $"{fill} on the bar track = {Ratio(C(fill), C("Panel2Brush")):F2}");
+
+    [Fact]
+    public void SliderTrackAndFilledPartAreVisibleOnThePanel()
+    {
+        Assert.True(Ratio(C("ControlBorderBrush"), C("BgBrush")) >= 3.0);
+        Assert.True(Ratio(C("AccentSolidBrush"), C("BgBrush")) >= 3.0);
+    }
+
+    // Checkbox box / switch track: the filled (on) state must stand out from every surface, and the tick or thumb on it must be readable.
+    [Theory]
+    [InlineData("PanelBrush")]
+    [InlineData("Panel2Brush")]
+    [InlineData("BgBrush")]
+    public void CheckedBoxAndOnSwitchStandOutFromTheSurface(string surface) =>
+        Assert.True(Ratio(C("AccentSolidBrush"), C(surface)) >= 3.0, $"on-state fill on {surface} = {Ratio(C("AccentSolidBrush"), C(surface)):F2}");
+
+    [Fact]
+    public void TickAndOnThumbAreReadableOnTheOnFill() =>
+        Assert.True(Ratio(new Swatch(255, 255, 255, 1), C("AccentSolidBrush")) >= 3.0);
+
+    [Fact]
+    public void OffSwitchThumbIsVisibleOnItsTrack() =>
+        Assert.True(Ratio(C("TextDimBrush"), C("Panel2Brush")) >= 3.0, $"{Ratio(C("TextDimBrush"), C("Panel2Brush")):F2}");
+
+    [Theory]
+    [InlineData("PanelBrush")]
+    [InlineData("BgBrush")]
+    public void ScrollBarThumbMeets3To1(string surface) =>
+        Assert.True(Ratio(C("ControlBorderBrush"), C(surface)) >= 3.0, $"scroll thumb on {surface}");
+
     [Theory]
     [InlineData("PanelBrush")]
     [InlineData("Panel2Brush")]

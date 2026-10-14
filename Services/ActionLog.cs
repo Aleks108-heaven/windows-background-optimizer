@@ -23,6 +23,7 @@ internal static class ActionLog
         try
         {
             path ??= DefaultPath;
+            if (!SafeAppData.IsSafeToWrite(path)) return; // a junction/symlink in the data folder: never write through it as admin
             var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{Environment.ProcessId}] {message.ReplaceLineEndings(" ")}{Environment.NewLine}";
             lock (Gate)
             {

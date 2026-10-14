@@ -53,6 +53,7 @@ public class TweakManager
     public (ActionResult Result, List<(RegValue V, int? Old)> Snapshot) Set(Tweak t, bool enabled)
     {
         var snapshot = new List<(RegValue, int?)>();
+        if (ViewOnlyMode.Block(t.Id) is { } viewOnly) return (viewOnly, snapshot);
         try
         {
             foreach (var v in t.Values)
@@ -71,6 +72,7 @@ public class TweakManager
 
     public ActionResult Restore(List<(RegValue V, int? Old)> snapshot)
     {
+        if (ViewOnlyMode.Block("tweaks") is { } viewOnly) return viewOnly;
         try
         {
             foreach (var (v, old) in snapshot) Write(v, old);

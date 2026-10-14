@@ -31,6 +31,7 @@ public class SecurityManager
 
     public ActionResult SetWinRm(bool enabled)
     {
+        if (ViewOnlyMode.Block("WinRM") is { } viewOnly) return viewOnly;
         try
         {
             using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_Service WHERE Name='WinRM'");
@@ -72,6 +73,7 @@ public class SecurityManager
 
     public ActionResult SetSmbBlocked(bool blocked)
     {
+        if (ViewOnlyMode.Block("SMB") is { } viewOnly) return viewOnly;
         // Unblocking when our rule is already gone (removed by the script, by hand, or never added)
         // is the desired end state, not an error.
         if (!blocked && !RuleExists(SmbRuleName))
@@ -127,6 +129,7 @@ public class SecurityManager
     public ActionResult SetAppBlocked(string exePath, bool blocked)
     {
         var name = System.IO.Path.GetFileName(exePath);
+        if (ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         if (blocked)
         {
             if (!exePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(exePath) || exePath.Contains('"'))

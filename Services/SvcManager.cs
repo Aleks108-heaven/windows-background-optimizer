@@ -38,6 +38,7 @@ public class SvcManager
     /// <param name="mode">"Auto"/"Automatic", "Manual", or "Disabled"</param>
     public ActionResult SetStartMode(ServiceEntry entry, string mode)
     {
+        if (ViewOnlyMode.Block(entry.DisplayName) is { } viewOnly) return viewOnly;
         if (entry.IsProtected)
             return new ActionResult(false, "Msg_ServiceProtectedModify", entry.DisplayName);
 
@@ -67,6 +68,7 @@ public class SvcManager
 
     public ActionResult Stop(ServiceEntry entry)
     {
+        if (ViewOnlyMode.Block(entry.DisplayName) is { } viewOnly) return viewOnly;
         if (entry.IsProtected)
             return new ActionResult(false, "Msg_ServiceProtectedStop", entry.DisplayName);
 
@@ -91,6 +93,7 @@ public class SvcManager
     // already starts Automatic services on its own and Manual ones on demand.
     public ActionResult Start(ServiceEntry entry)
     {
+        if (ViewOnlyMode.Block(entry.DisplayName) is { } viewOnly) return viewOnly;
         if (entry.IsProtected)
             return new ActionResult(false, "Msg_ServiceProtectedModify", entry.DisplayName);
 

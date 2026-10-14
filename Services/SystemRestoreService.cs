@@ -20,6 +20,7 @@ internal static class SystemRestoreService
 
     public static ActionResult CreateRestorePoint(string description)
     {
+        if (ViewOnlyMode.Block("restore point") is { } viewOnly) return viewOnly;
         try
         {
             using var restoreClass = new ManagementClass(@"root\default", "SystemRestore", null);

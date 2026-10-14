@@ -78,6 +78,9 @@ public partial class MainWindow : Window
         ServiceGrid.ItemsSource = _services;
         foreach (var target in CleanupService.Targets()) _cleanupItems.Add(new CleanupItem(target));
         CleanupList.ItemsSource = _cleanupItems;
+        InitChecks();
+        InitSettingsTab();
+        InitStartupTab();
 
         LanguageCombo.ItemsSource = Loc.Languages;
         LanguageCombo.SelectedItem = Loc.Languages.First(l => l.Code == Loc.Instance.Language);
@@ -107,13 +110,15 @@ public partial class MainWindow : Window
         IsVisibleChanged += (_, _) => ApplyRefreshPolicy();
         AutoOptimizeCheck.Checked += (_, _) => ApplyRefreshPolicy();
         AutoOptimizeCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
+        LoadAlertCheck.Checked += (_, _) => ApplyRefreshPolicy();
+        LoadAlertCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
         ApplyRefreshPolicy();
     }
 
     private void ApplyRefreshPolicy()
     {
         if (_closed) return;
-        var run = RefreshPolicy.ShouldRun(IsVisible, AutoOptimizeCheck.IsChecked == true);
+        var run = RefreshPolicy.ShouldRun(IsVisible, AutoOptimizeCheck.IsChecked == true, LoadAlertCheck.IsChecked == true);
         if (run == _refreshTimer.IsEnabled) return;
 
         if (run)
@@ -144,12 +149,18 @@ public partial class MainWindow : Window
         {
             // Enumerating every process and the battery WMI query are the slow parts; they run off the
             // UI thread so the window never stutters during a refresh. Only the results are applied here.
-            var (fresh, battery) = await Task.Run(() => (_processMonitor.Refresh(), _battery.GetHealth()));
+            // Disk and GPU load come from slow WMI queries, so they are only read while someone can see them
+            // (the Settings tab is open) or the load alert needs them.
+            var wantExtraLoad = SettingsTab.IsSelected || LoadAlertCheck.IsChecked == true;
+            var (fresh, battery, extra) = await Task.Run(() =>
+                (_processMonitor.Refresh(), _battery.GetHealth(), wantExtraLoad ? _loadSampler.Sample() : (ExtraLoad?)null));
             if (_closed) return;
 
             ApplyProcesses(fresh);
             UpdateSystemStats();
             ApplyBattery(battery);
+            if (extra is { } sampled) _extraLoad = sampled;
+            UpdateLoadPanel();
             AutoOptimizeTick();
         }
         catch (Exception ex) { Log(ex.Message); }
@@ -168,17 +179,23 @@ public partial class MainWindow : Window
             AllowSuspendCheck.IsChecked = s.AllowSuspend;
             AutoRestorePointCheck.IsChecked = s.AutoRestorePoint;
             PersistPriorityCheck.IsChecked = s.PersistPriority;
+            ViewOnlyCheck.IsChecked = s.ViewOnly;
+            LoadAlertCheck.IsChecked = s.LoadAlert;
+            LoadLimitSlider.Value = s.LoadLimitPercent;
         }
         finally { _loadingSettings = false; }
+        // Before anything can act: from the first tick on, view-only mode must already be in force.
+        ApplyViewOnlyState(s.ViewOnly);
 
         // Saved on every change rather than on exit, so a crash or kill can't lose a choice. Unchecking
         // AllowSuspend in code (declined consent dialog) raises Unchecked too, so that is saved as well.
-        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck })
+        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, ViewOnlyCheck, LoadAlertCheck })
         {
             box.Checked += (_, _) => SaveSettings();
             box.Unchecked += (_, _) => SaveSettings();
         }
         AutoOptimizeThresholdBox.TextChanged += (_, _) => SaveSettings();
+        LoadLimitSlider.ValueChanged += (_, _) => SaveSettings();
     }
 
     private void SaveSettings()
@@ -192,6 +209,9 @@ public partial class MainWindow : Window
             AllowSuspend = AllowSuspendCheck.IsChecked == true,
             AutoRestorePoint = AutoRestorePointCheck.IsChecked == true,
             PersistPriority = PersistPriorityCheck.IsChecked == true,
+            ViewOnly = ViewOnlyCheck.IsChecked == true,
+            LoadAlert = LoadAlertCheck.IsChecked == true,
+            LoadLimitPercent = (int)Math.Round(LoadLimitSlider.Value),
         }.Save();
     }
 
@@ -200,6 +220,7 @@ public partial class MainWindow : Window
     private void UpdateSystemStats()
     {
         var stats = _systemStats.Sample();
+        _latestStats = stats;
         CpuUsageText.Text = $"{stats.CpuPercent:F0}%";
         MemoryUsageText.Text = $"{FormatGb(stats.UsedMemoryBytes)} / {FormatGb(stats.TotalMemoryBytes)} GB";
 
@@ -333,6 +354,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _closed = true;
+            _checkCts?.Cancel();
             _refreshTimer.Stop();
             ActionLog.Write($"=== Exiting. Releasing {_autoThrottled.Count} throttled and {_autoSuspended.Count} suspended process(es).");
             RestoreAutoThrottled();
@@ -392,7 +414,7 @@ public partial class MainWindow : Window
     {
         // Windows respawns helpers like SearchFilterHost under new PIDs at Normal priority,
         // so a one-shot priority change is lost. Re-apply it to every new instance by name.
-        if (_enforcedPriorities.Count > 0)
+        if (_enforcedPriorities.Count > 0 && !ViewOnlyMode.Enabled)
         {
             foreach (var p in fresh)
             {
@@ -453,6 +475,7 @@ public partial class MainWindow : Window
 
     private void KillProcess_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var selected = ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
@@ -483,6 +506,7 @@ public partial class MainWindow : Window
 
     private void TrimProcesses(List<ProcessEntry> entries)
     {
+        if (ViewOnlyBlocks()) return;
         int ok = 0;
         double freed = 0;
         foreach (var entry in entries)
@@ -501,6 +525,7 @@ public partial class MainWindow : Window
     // protected and interactive apps are never touched; nothing is killed or disabled.
     private void LaptopSaver_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var targets = _processes
             .Where(p => !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name)
                 && ItemClassifier.ClassifyStartup(p.Name, p.Name) is ItemCategory.Telemetry or ItemCategory.VendorDiag)
@@ -527,13 +552,14 @@ public partial class MainWindow : Window
             {
                 int n = 0;
                 foreach (var (pid, name, prio) in previous)
-                    if (ProcessMonitor.SetPriority(pid, name, prio).Ok) n++;
+                    if (ProcessMonitor.SetPriority(pid, name, prio, undo: true).Ok) n++;
                 return new ActionResult(true, "Msg_SaverUndone", n);
             });
     }
 
     private void ApplyPriority_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var selected = ProcessGrid.SelectedItems.Cast<ProcessEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
@@ -610,7 +636,13 @@ public partial class MainWindow : Window
             if (!_belowThreshold)
             {
                 _belowThreshold = true;
-                ActionLog.Write($"Memory pressure: {FormatGb(freeBytes)} GB free is below the {thresholdGb:0.##} GB threshold; Auto-Optimize is acting.");
+                ActionLog.Write($"Memory pressure: {FormatGb(freeBytes)} GB free is below the {thresholdGb:0.##} GB threshold; " +
+                                $"Auto-Optimize is {(ViewOnlyMode.Enabled ? "only observing (view-only mode)" : "acting")}.");
+            }
+            if (ViewOnlyMode.Enabled)
+            {
+                ReportWhatWouldHappen(foreground); // same candidates, nothing touched
+                return;
             }
             foreach (var entry in _workloadOptimizer.GetIdleCandidates(_processes, foreground))
             {
@@ -668,6 +700,7 @@ public partial class MainWindow : Window
                 _belowThreshold = false;
                 ActionLog.Write($"Memory pressure over: {FormatGb(freeBytes)} GB free; releasing anything Auto-Optimize changed.");
             }
+            _wouldAct.Clear(); // a later episode may name the same processes again
             RestoreAutoThrottled();
         }
     }
@@ -679,7 +712,7 @@ public partial class MainWindow : Window
     private void RestoreAutoThrottled()
     {
         foreach (var (pid, (name, priority)) in _autoThrottled)
-            ProcessMonitor.SetPriority(pid, name, priority);
+            ProcessMonitor.SetPriority(pid, name, priority, undo: true);
         if (_autoThrottled.Count > 0) Log(Loc.Instance.Format("Msg_AutoRestored", _autoThrottled.Count));
         _autoThrottled.Clear();
 
@@ -725,7 +758,7 @@ public partial class MainWindow : Window
         foreach (var pid in _autoThrottled.Keys.Where(foreground.Contains).ToList())
         {
             var (name, priority) = _autoThrottled[pid];
-            ProcessMonitor.SetPriority(pid, name, priority);
+            ProcessMonitor.SetPriority(pid, name, priority, undo: true);
             _autoThrottled.Remove(pid);
         }
     }
@@ -738,6 +771,7 @@ public partial class MainWindow : Window
     private void RestartHog_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not ProcessEntry entry) return;
+        if (ViewOnlyBlocks()) return;
         if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); return; }
 
         var items = new List<string> { $"{entry.Name}  —  PID {entry.Pid}, {entry.MemoryDisplay}" };
@@ -763,8 +797,10 @@ public partial class MainWindow : Window
         {
             var items = await Task.Run(() => _startupManager.GetAll());
             if (id != _startupLoadId) return;
+            NoteSelfReenabled(items);
             _startupItems.Clear();
             foreach (var s in items) _startupItems.Add(s);
+            UpdateStartupDetails();
         }
         catch (Exception ex) { Log(ex.Message); }
     }
@@ -804,6 +840,7 @@ public partial class MainWindow : Window
 
     private async void EnableStartup_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var selected = StartupGrid.SelectedItems.Cast<StartupEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
         await SetStartupEnabledAsync(selected, enable: true, restorePointDescription: null);
@@ -811,6 +848,7 @@ public partial class MainWindow : Window
 
     private async void DisableStartup_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var selected = StartupGrid.SelectedItems.Cast<StartupEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
@@ -840,6 +878,7 @@ public partial class MainWindow : Window
             foreach (var (entry, wasEnabled, result) in results)
             {
                 Log(result);
+                if (result.Ok) RememberStartupChange(entry, enable);
                 if (result.Ok) _undoStack.Push(() => _startupManager.SetEnabled(entry, wasEnabled));
             }
         }
@@ -851,6 +890,7 @@ public partial class MainWindow : Window
 
     private async void CreateRestorePoint_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         if (!BeginBusy()) return;
         try { Log(await CreateRestorePointAsync("BgOptimizer: manual restore point")); }
         finally { EndBusy(); }
@@ -881,6 +921,7 @@ public partial class MainWindow : Window
 
     private async void CleanupRun_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var chosen = _cleanupItems.Where(i => i.Selected).ToList();
         if (chosen.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
@@ -998,6 +1039,8 @@ public partial class MainWindow : Window
             var box = new System.Windows.Controls.CheckBox
             {
                 Content = text, Tag = tweak, IsChecked = _tweaks.IsApplied(tweak), Margin = new Thickness(0, 0, 0, 10),
+                Style = (Style)FindResource("ToggleSwitch"),
+                VerticalContentAlignment = VerticalAlignment.Top, // the switch sits level with the first line of a multi-line description
             };
             box.Click += Tweak_Click;
             TweakList.Children.Add(box);
@@ -1009,6 +1052,7 @@ public partial class MainWindow : Window
         var box = (System.Windows.Controls.CheckBox)sender;
         var tweak = (TweakManager.Tweak)box.Tag;
         var enable = box.IsChecked == true;
+        if (ViewOnlyBlocks()) { box.IsChecked = !enable; return; } // the click already flipped the switch; put it back
 
         var msg = Loc.Instance["Tw_" + tweak.Id] + "\n\n" + Loc.Instance["Tw_" + tweak.Id + "_d"];
         if (!ConfirmDialog.Show(this, Loc.Instance[enable ? "Dlg_TweakOn" : "Dlg_TweakOff"], msg, null,
@@ -1054,6 +1098,7 @@ public partial class MainWindow : Window
 
     private void ApplySecurityChangeText(string confirmText, Func<ActionResult> apply, Func<ActionResult> revert, bool danger)
     {
+        if (ViewOnlyBlocks()) return;
         if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_SecTitle"], confirmText, null,
                 danger, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
             return;
@@ -1079,6 +1124,7 @@ public partial class MainWindow : Window
 
     private void UndoLast_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return; // an undo is itself a change; turn view-only off first
         if (_undoStack.Count == 0) { Log(Loc.Instance["Msg_UndoNone"]); return; }
 
         var undo = _undoStack.Pop();
@@ -1111,6 +1157,7 @@ public partial class MainWindow : Window
 
     private async Task SetServiceMode(string mode, bool needsConfirm)
     {
+        if (ViewOnlyBlocks()) return;
         var selected = ServiceGrid.SelectedItems.Cast<ServiceEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 
@@ -1161,6 +1208,7 @@ public partial class MainWindow : Window
 
     private async void ServiceStop_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewOnlyBlocks()) return;
         var selected = ServiceGrid.SelectedItems.Cast<ServiceEntry>().ToList();
         if (selected.Count == 0) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
 

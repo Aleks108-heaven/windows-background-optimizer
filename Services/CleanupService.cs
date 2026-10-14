@@ -117,6 +117,7 @@ internal static class CleanupService
 
     public static CleanupRun Clean(CleanupTarget target, DateTime? nowUtc = null)
     {
+        if (ViewOnlyMode.Enabled) return new CleanupRun(0, 0, 0);
         var now = nowUtc ?? DateTime.UtcNow;
         long freed = 0; int deleted = 0, skipped = 0;
         foreach (var root in SafeRoots(target))

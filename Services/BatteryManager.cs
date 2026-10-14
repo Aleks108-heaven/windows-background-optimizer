@@ -96,6 +96,7 @@ public class BatteryManager
 
     public ActionResult SetHibernateOnLidClose(bool enabled)
     {
+        if (ViewOnlyMode.Block("hibernate") is { } viewOnly) return viewOnly;
         RunPowercfg("-attributes SUB_BUTTONS LIDACTION -ATTRIB_HIDE"); // unhide; some OEM images hide it by default
         RunPowercfg("-attributes SUB_SLEEP HIBERNATEIDLE -ATTRIB_HIDE");
 
