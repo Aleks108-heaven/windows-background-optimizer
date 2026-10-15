@@ -4,13 +4,15 @@ using System.Text;
 namespace BgOptimizer.Services;
 
 /// <summary>
-/// The optional code that keeps view-only mode switched on. Only a salted PBKDF2 hash is stored (in settings.json),
-/// never the code itself. This guards against accidental or casual changes by someone sitting at the PC; it is not
-/// a barrier against anyone who can already edit files in this user's profile (they can edit settings.json too).
+/// The optional code that keeps view-only mode switched on. Only a salted PBKDF2 hash is stored, never the code
+/// itself, and it is kept in <see cref="LockStore"/> (administrator-writable only), not in the user-editable
+/// settings.json. It stops accidental changes and programs running as the user; it is not a barrier against an
+/// administrator, who can delete the key.
 /// </summary>
 internal static class ViewOnlyLock
 {
-    public const int MinLength = 4;
+    // Long enough that the hash cannot be guessed offline in a practical time even if it is read from the registry.
+    public const int MinLength = 8;
 
     private const string Scheme = "pbkdf2-sha256";
     private const int DefaultIterations = 200_000;

@@ -61,6 +61,7 @@ public partial class MainWindow
         ApplyLimitChange();
         RefreshMeterText();
         UpdateCodeUi();
+        if (_legacyCodeIgnored) Log(Loc.Instance["Msg_ViewOnlyCodeLegacy"]);
     }
 
     private void ClearSelectionInViewOnly(System.Windows.Controls.DataGrid grid)
@@ -220,15 +221,19 @@ public partial class MainWindow
             _wouldAct.Clear();
         }
         Log(Loc.Instance[on ? "Msg_ViewOnlyOn" : "Msg_ViewOnlyOff"]);
+        if (!_lockStore.SetViewOnly(on)) Log(Loc.Instance["Msg_ViewOnlyNotSaved"]);
         SaveSettings();
     }
 
     // ---------- Code lock ----------
 
+    // The mode, the code hash and the wrong-try count live in the administrator-only LockStore (see there).
+    private readonly LockStore _lockStore = new();
     private string? _codeHash;          // null: no code is set
     private int _codeFailures;
     private DateTime _codeLockedUntil;  // after repeated wrong codes: no checking until then
     private bool _revertingViewOnly;    // true while the switch is put back after a refused unlock
+    private bool _legacyCodeIgnored;    // a 1.2.0 code was found in settings.json and not trusted
 
     /// <summary>The switch was turned off: with a code set, the mode only follows once the code has been entered.</summary>
     private void ViewOnlyCheck_Unchecked(object sender, RoutedEventArgs e)
@@ -253,16 +258,24 @@ public partial class MainWindow
         var accepted = CodeDialog.Ask(this, Loc.Instance[titleKey], Loc.Instance[messageKey],
             Loc.Instance["Set_CodeOk"], Loc.Instance["Set_CodeCancel"], typed =>
             {
-                var wait = (int)Math.Ceiling((_codeLockedUntil - DateTime.UtcNow).TotalSeconds);
+                // Capped, so a damaged stored time can never lock the switch for longer than the longest normal wait.
+                var wait = (int)Math.Ceiling(Math.Min(60.0, (_codeLockedUntil - DateTime.UtcNow).TotalSeconds));
                 if (wait > 0) return Loc.Instance.Format("Set_CodeWait", wait);
-                if (ViewOnlyLock.Verify(typed, hash)) { _codeFailures = 0; return null; }
+                if (ViewOnlyLock.Verify(typed, hash))
+                {
+                    _codeFailures = 0;
+                    _codeLockedUntil = DateTime.MinValue;
+                    _lockStore.SetFailures(0, DateTime.MinValue);
+                    return null;
+                }
 
                 _codeFailures++;
                 Log(Loc.Instance["Msg_ViewOnlyCodeWrong"]);
                 var next = ViewOnlyLock.WaitSeconds(_codeFailures);
-                if (next <= 0) return Loc.Instance["Set_CodeWrong"];
-                _codeLockedUntil = DateTime.UtcNow.AddSeconds(next);
-                return Loc.Instance.Format("Set_CodeWait", next);
+                if (next > 0) _codeLockedUntil = DateTime.UtcNow.AddSeconds(next);
+                // Kept across restarts: quitting and relaunching must not reset the slow-down.
+                _lockStore.SetFailures(_codeFailures, _codeLockedUntil);
+                return next <= 0 ? Loc.Instance["Set_CodeWrong"] : Loc.Instance.Format("Set_CodeWait", next);
             });
         return accepted is not null;
     }
@@ -278,8 +291,12 @@ public partial class MainWindow
             repeatLabel: Loc.Instance["Set_CodeRepeat"], mismatchText: () => Loc.Instance["Set_CodeMismatch"]);
         if (code is null) return;
 
-        _codeHash = ViewOnlyLock.Create(code);
-        SaveSettings();
+        var hash = ViewOnlyLock.Create(code);
+        // Not in memory only: a lock that would vanish on restart must not look like it is on.
+        if (!_lockStore.SetCodeHash(hash)) { Log(Loc.Instance["Msg_ViewOnlyNotSaved"]); return; }
+        _codeHash = hash;
+        _codeFailures = 0;
+        _codeLockedUntil = DateTime.MinValue;
         UpdateCodeUi();
         Log(Loc.Instance[changing ? "Msg_ViewOnlyCodeChanged" : "Msg_ViewOnlyCodeSet"]);
     }
@@ -287,8 +304,10 @@ public partial class MainWindow
     private void CodeRemove_Click(object sender, RoutedEventArgs e)
     {
         if (_codeHash is null || !AskForCurrentCode("Set_CodeEnterTitle", "Set_CodeCurrentMsg")) return;
+        if (!_lockStore.SetCodeHash(null)) { Log(Loc.Instance["Msg_ViewOnlyNotSaved"]); return; }
         _codeHash = null;
-        SaveSettings();
+        _codeFailures = 0;
+        _codeLockedUntil = DateTime.MinValue;
         UpdateCodeUi();
         Log(Loc.Instance["Msg_ViewOnlyCodeRemoved"]);
     }

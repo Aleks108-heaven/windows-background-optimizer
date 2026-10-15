@@ -14,6 +14,11 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    # Only this job may sign build provenance (attestations); the workflow default above stays read-only.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     steps:
       - name: Checkout
@@ -72,4 +77,34 @@ jobs:
         with:
           name: BgOptimizer-Setup
           path: installer/Output/*.exe
+          if-no-files-found: error
+
+      # The release files, built here so the published download is exactly what CI built (and what the
+      # attestation below vouches for), not something repackaged by hand on a developer machine.
+      - name: Package release files
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content BgOptimizer.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          New-Item -ItemType Directory -Force release | Out-Null
+          Compress-Archive -Path publish/* -DestinationPath "release/BgOptimizer-$version-win-x64-portable.zip" -CompressionLevel Optimal
+          Copy-Item installer/Output/*.exe release/
+          $lines = Get-ChildItem release -File | Sort-Object Name | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          [IO.File]::WriteAllText("$PWD/release/SHA256SUMS.txt", ($lines -join "`n") + "`n")
+          Get-Content release/SHA256SUMS.txt
+
+      # Signed proof of which commit and workflow produced each file. Not for pull requests (forks get no token).
+      # Verify a download with: gh attestation verify <file> --repo Aleks108-heaven/windows-background-optimizer
+      - name: Attest build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release/*.zip
+            release/*.exe
+
+      - name: Upload release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: BgOptimizer-Release
+          path: release/
           if-no-files-found: error

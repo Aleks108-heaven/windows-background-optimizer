@@ -171,6 +171,17 @@ public partial class MainWindow : Window
 
     private void ApplySettings(AppSettings s)
     {
+        // View-only mode and its code come from the administrator-only store, not from settings.json, which any
+        // program running as the user can edit. A store that has never been written (first start after an upgrade)
+        // takes the old settings.json value once; an old code hash there is deliberately not trusted.
+        var locks = _lockStore.Load();
+        var viewOnly = locks.ViewOnly ?? s.ViewOnly;
+        if (locks.ViewOnly is null && viewOnly) _lockStore.SetViewOnly(true);
+        _codeHash = locks.CodeHash;
+        _codeFailures = locks.Failures;
+        _codeLockedUntil = locks.LockedUntilUtc;
+        _legacyCodeIgnored = s.ViewOnlyCodeHash is not null && _codeHash is null;
+
         _loadingSettings = true;
         try
         {
@@ -179,14 +190,13 @@ public partial class MainWindow : Window
             AllowSuspendCheck.IsChecked = s.AllowSuspend;
             AutoRestorePointCheck.IsChecked = s.AutoRestorePoint;
             PersistPriorityCheck.IsChecked = s.PersistPriority;
-            ViewOnlyCheck.IsChecked = s.ViewOnly;
-            _codeHash = s.ViewOnlyCodeHash;
+            ViewOnlyCheck.IsChecked = viewOnly;
             LoadAlertCheck.IsChecked = s.LoadAlert;
             LoadLimitSlider.Value = s.LoadLimitPercent;
         }
         finally { _loadingSettings = false; }
         // Before anything can act: from the first tick on, view-only mode must already be in force.
-        ApplyViewOnlyState(s.ViewOnly);
+        ApplyViewOnlyState(viewOnly);
 
         // Saved on every change rather than on exit, so a crash or kill can't lose a choice. Unchecking
         // AllowSuspend in code (declined consent dialog) raises Unchecked too, so that is saved as well.
@@ -211,9 +221,8 @@ public partial class MainWindow : Window
             AllowSuspend = AllowSuspendCheck.IsChecked == true,
             AutoRestorePoint = AutoRestorePointCheck.IsChecked == true,
             PersistPriority = PersistPriorityCheck.IsChecked == true,
-            // The mode itself, not the switch: while the code prompt is open the switch has already moved but the mode has not.
+            // Informational only: the mode and the code are kept in LockStore, and this value is read back just once.
             ViewOnly = ViewOnlyMode.Enabled,
-            ViewOnlyCodeHash = _codeHash,
             LoadAlert = LoadAlertCheck.IsChecked == true,
             LoadLimitPercent = (int)Math.Round(LoadLimitSlider.Value),
         }.Save();
