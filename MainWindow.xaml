@@ -294,77 +294,111 @@
                 </DockPanel>
             </TabItem>
 
-            <!-- CHECKS TAB: read-only scans (leftovers of deleted programs, duplicate files, duplicate drivers) -->
+            <!-- CHECKS TAB: read-only scans (leftovers of deleted programs, duplicate files, duplicate drivers).
+                 One sub-tab per scan, so the result grid gets the whole height of the window instead of a
+                 220 px slot inside a scrolling page. -->
             <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Checks]}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12">
-                        <DockPanel>
-                            <Button x:Name="CheckStopButton" DockPanel.Dock="Right" IsEnabled="False" Style="{StaticResource BtnDanger}"
-                                    Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Stop]}" Click="CheckStop_Click"/>
-                            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource TextFaintBrush}"
-                                       Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Hint]}"/>
-                        </DockPanel>
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
+                    <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                        <Button x:Name="CheckStopButton" DockPanel.Dock="Right" IsEnabled="False" Style="{StaticResource BtnDanger}"
+                                Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Stop]}" Click="CheckStop_Click"/>
+                        <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Hint]}"/>
+                    </DockPanel>
+
+                    <TabControl x:Name="ChecksSubTabs" Grid.Row="1">
                         <!-- Leftovers of deleted programs -->
-                        <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_LeftTitle]}"/>
-                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_LeftHint]}"/>
-                        <WrapPanel Margin="0,6,0,0">
-                            <Button x:Name="LeftoverScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Scan]}" Click="LeftoverScan_Click"/>
-                            <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_OpenLocation]}" Click="LeftoverOpen_Click"/>
-                            <TextBlock x:Name="LeftoverStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                        </WrapPanel>
-                        <DataGrid x:Name="LeftoverGrid" Height="220" Margin="0,6,0,0" RowStyle="{StaticResource BaseRowStyle}"
-                                  AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_LeftTitle]}">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Type]}" Binding="{Binding Kind}" Width="230" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Location]}" Binding="{Binding Path}" Width="*" MinWidth="200" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Size]}" Binding="{Binding Size}" Width="80"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Note]}" Binding="{Binding Note}" Width="220" ElementStyle="{StaticResource TrimTextCell}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
+                        <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_TabLeft]}">
+                            <Grid Margin="0,10,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0">
+                                    <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_LeftTitle]}"/>
+                                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_LeftHint]}"/>
+                                </StackPanel>
+                                <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                                    <Button x:Name="LeftoverScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Scan]}" Click="LeftoverScan_Click"/>
+                                    <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_OpenLocation]}" Click="LeftoverOpen_Click"/>
+                                    <TextBlock x:Name="LeftoverStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                                </WrapPanel>
+                                <DataGrid x:Name="LeftoverGrid" Grid.Row="2" MinHeight="120" Margin="0,6,0,0" RowStyle="{StaticResource BaseRowStyle}"
+                                          AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_LeftTitle]}">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Type]}" Binding="{Binding Kind}" Width="230" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Location]}" Binding="{Binding Path}" Width="*" MinWidth="200" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Size]}" Binding="{Binding Size}" Width="80"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Note]}" Binding="{Binding Note}" Width="220" ElementStyle="{StaticResource TrimTextCell}"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
 
                         <!-- Duplicate files -->
-                        <TextBlock Margin="0,22,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupTitle]}"/>
-                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupHint]}"/>
-                        <WrapPanel Margin="0,6,0,0">
-                            <Button x:Name="DupScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupScanDefault]}" Click="DuplicateScan_Click"/>
-                            <Button x:Name="DupScanFolderButton" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupScanFolder]}" Click="DuplicateScanFolder_Click"/>
-                            <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_OpenLocation]}" Click="DuplicateOpen_Click"/>
-                            <TextBlock x:Name="DuplicateStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                        </WrapPanel>
-                        <DataGrid x:Name="DuplicateGrid" Height="220" Margin="0,6,0,0" RowStyle="{StaticResource BaseRowStyle}"
-                                  AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupTitle]}">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Group]}" Binding="{Binding Group}" Width="70"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="260" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Folder]}" Binding="{Binding Folder}" Width="*" MinWidth="200" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Size]}" Binding="{Binding Size}" Width="90"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Modified]}" Binding="{Binding Modified}" Width="140"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
+                        <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupTitle]}">
+                            <Grid Margin="0,10,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupHint]}"/>
+                                <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                                    <Button x:Name="DupScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupScanDefault]}" Click="DuplicateScan_Click"/>
+                                    <Button x:Name="DupScanFolderButton" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupScanFolder]}" Click="DuplicateScanFolder_Click"/>
+                                    <Button Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_OpenLocation]}" Click="DuplicateOpen_Click"/>
+                                    <TextBlock x:Name="DuplicateStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                                </WrapPanel>
+                                <DataGrid x:Name="DuplicateGrid" Grid.Row="2" MinHeight="120" Margin="0,6,0,0" RowStyle="{StaticResource BaseRowStyle}"
+                                          AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DupTitle]}">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Group]}" Binding="{Binding Group}" Width="70"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Name]}" Binding="{Binding Name}" Width="260" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Folder]}" Binding="{Binding Folder}" Width="*" MinWidth="200" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Size]}" Binding="{Binding Size}" Width="90"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Modified]}" Binding="{Binding Modified}" Width="140"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
 
                         <!-- Duplicate drivers -->
-                        <TextBlock Margin="0,22,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvTitle]}"/>
-                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvHint]}"/>
-                        <WrapPanel Margin="0,6,0,0">
-                            <Button x:Name="DriverScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Scan]}" Click="DriverScan_Click"/>
-                            <TextBlock x:Name="DriverStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                        </WrapPanel>
-                        <DataGrid x:Name="DriverGrid" Height="220" Margin="0,6,0,12" RowStyle="{StaticResource BaseRowStyle}"
-                                  AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvTitle]}">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Driver]}" Binding="{Binding Driver}" Width="200" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Version]}" Binding="{Binding Version}" Width="130" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Date]}" Binding="{Binding Date}" Width="95"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Status]}" Binding="{Binding Status}" Width="200" ElementStyle="{StaticResource TrimTextCell}"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Published]}" Binding="{Binding PublishedName}" Width="110"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Size]}" Binding="{Binding Size}" Width="90"/>
-                                <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Provider]}" Binding="{Binding Provider}" Width="*" MinWidth="120" ElementStyle="{StaticResource TrimTextCell}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </StackPanel>
-                </ScrollViewer>
+                        <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvTitle]}">
+                            <Grid Margin="0,10,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvHint]}"/>
+                                <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                                    <Button x:Name="DriverScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Scan]}" Click="DriverScan_Click"/>
+                                    <TextBlock x:Name="DriverStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                                </WrapPanel>
+                                <DataGrid x:Name="DriverGrid" Grid.Row="2" MinHeight="120" Margin="0,6,0,0" RowStyle="{StaticResource BaseRowStyle}"
+                                          AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvTitle]}">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Driver]}" Binding="{Binding Driver}" Width="200" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Version]}" Binding="{Binding Version}" Width="130" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Date]}" Binding="{Binding Date}" Width="95"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Col_Status]}" Binding="{Binding Status}" Width="200" ElementStyle="{StaticResource TrimTextCell}"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Published]}" Binding="{Binding PublishedName}" Width="110"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Size]}" Binding="{Binding Size}" Width="90"/>
+                                        <DataGridTextColumn Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Col_Provider]}" Binding="{Binding Provider}" Width="*" MinWidth="120" ElementStyle="{StaticResource TrimTextCell}"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
             </TabItem>
 
             <!-- SECURITY TAB -->
@@ -430,6 +464,18 @@
                                   Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_ViewOnly]}"/>
                         <TextBlock Margin="50,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
                                    Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_ViewOnlyHint]}"/>
+                        <TextBlock Margin="50,4,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_ViewOnlyNoSelect]}"/>
+
+                        <!-- Optional code: without it nobody can switch view-only mode off -->
+                        <TextBlock Margin="0,18,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CodeTitle]}"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CodeHint]}"/>
+                        <WrapPanel Margin="0,6,0,0">
+                            <TextBlock x:Name="CodeStatusText" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold"/>
+                            <Button x:Name="CodeSetButton" Margin="0,4,4,4"/>
+                            <Button x:Name="CodeRemoveButton"/>
+                        </WrapPanel>
 
                         <TextBlock Margin="0,26,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadTitle]}"/>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"

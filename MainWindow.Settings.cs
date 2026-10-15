@@ -46,13 +46,28 @@ public partial class MainWindow
         foreach (var meter in _meters) LoadMeterPanel.Children.Add(BuildMeterRow(meter));
 
         LoadLimitSlider.ValueChanged += (_, _) => { ApplyLimitChange(); };
-        ViewOnlyCheck.Checked += (_, _) => ApplyViewOnlyState(true, announce: true);
-        ViewOnlyCheck.Unchecked += (_, _) => ApplyViewOnlyState(false, announce: true);
+        ViewOnlyCheck.Checked += (_, _) => { if (!_revertingViewOnly) ApplyViewOnlyState(true, announce: true); };
+        ViewOnlyCheck.Unchecked += ViewOnlyCheck_Unchecked;
+        CodeSetButton.Click += CodeSet_Click;
+        CodeRemoveButton.Click += CodeRemove_Click;
         LoadAlertCheck.Checked += (_, _) => _loadWatch.Reset();
-        Loc.Instance.PropertyChanged += (_, _) => { RefreshMeterText(); UpdateLoadLimitText(); };
+        Loc.Instance.PropertyChanged += (_, _) => { RefreshMeterText(); UpdateLoadLimitText(); UpdateCodeUi(); };
+
+        // View-only mode means nothing here can be acted on, so rows can't be picked in the lists whose buttons
+        // act on the selection. (The Checks lists stay selectable: "Open location" only reads.)
+        foreach (var grid in new[] { ProcessGrid, StartupGrid, ServiceGrid })
+            grid.SelectionChanged += (_, _) => ClearSelectionInViewOnly(grid);
 
         ApplyLimitChange();
         RefreshMeterText();
+        UpdateCodeUi();
+    }
+
+    private void ClearSelectionInViewOnly(System.Windows.Controls.DataGrid grid)
+    {
+        if (!ViewOnlyMode.Enabled || grid.SelectedItems.Count == 0) return;
+        // Not inside the SelectionChanged call itself: the grid is still updating its selection there.
+        Dispatcher.BeginInvoke(new Action(() => { if (ViewOnlyMode.Enabled) grid.UnselectAll(); }));
     }
 
     private LoadMeter NewMeter(string id, Func<string> label) => new(id, label);
@@ -190,6 +205,12 @@ public partial class MainWindow
     {
         ViewOnlyMode.Enabled = on;
         ViewOnlyBanner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (on)
+        {
+            ProcessGrid.UnselectAll();
+            StartupGrid.UnselectAll();
+            ServiceGrid.UnselectAll();
+        }
         if (!announce) return;
 
         if (on)
@@ -199,6 +220,86 @@ public partial class MainWindow
             _wouldAct.Clear();
         }
         Log(Loc.Instance[on ? "Msg_ViewOnlyOn" : "Msg_ViewOnlyOff"]);
+        SaveSettings();
+    }
+
+    // ---------- Code lock ----------
+
+    private string? _codeHash;          // null: no code is set
+    private int _codeFailures;
+    private DateTime _codeLockedUntil;  // after repeated wrong codes: no checking until then
+    private bool _revertingViewOnly;    // true while the switch is put back after a refused unlock
+
+    /// <summary>The switch was turned off: with a code set, the mode only follows once the code has been entered.</summary>
+    private void ViewOnlyCheck_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (_revertingViewOnly) return;
+        if (_codeHash is not null && !AskForCurrentCode("Set_CodeEnterTitle", "Set_CodeEnterMsg"))
+        {
+            // The mode never actually turned off (that only happens in ApplyViewOnlyState), so just put the switch back.
+            _revertingViewOnly = true;
+            try { ViewOnlyCheck.IsChecked = true; }
+            finally { _revertingViewOnly = false; }
+            Log(Loc.Instance["Msg_ViewOnlyStays"]);
+            return;
+        }
+        ApplyViewOnlyState(false, announce: true);
+    }
+
+    /// <summary>Prompts until the right code is typed (true) or the user gives up (false). Wrong tries slow down after the second.</summary>
+    private bool AskForCurrentCode(string titleKey, string messageKey)
+    {
+        var hash = _codeHash;
+        var accepted = CodeDialog.Ask(this, Loc.Instance[titleKey], Loc.Instance[messageKey],
+            Loc.Instance["Set_CodeOk"], Loc.Instance["Set_CodeCancel"], typed =>
+            {
+                var wait = (int)Math.Ceiling((_codeLockedUntil - DateTime.UtcNow).TotalSeconds);
+                if (wait > 0) return Loc.Instance.Format("Set_CodeWait", wait);
+                if (ViewOnlyLock.Verify(typed, hash)) { _codeFailures = 0; return null; }
+
+                _codeFailures++;
+                Log(Loc.Instance["Msg_ViewOnlyCodeWrong"]);
+                var next = ViewOnlyLock.WaitSeconds(_codeFailures);
+                if (next <= 0) return Loc.Instance["Set_CodeWrong"];
+                _codeLockedUntil = DateTime.UtcNow.AddSeconds(next);
+                return Loc.Instance.Format("Set_CodeWait", next);
+            });
+        return accepted is not null;
+    }
+
+    private void CodeSet_Click(object sender, RoutedEventArgs e)
+    {
+        var changing = _codeHash is not null;
+        if (changing && !AskForCurrentCode("Set_CodeEnterTitle", "Set_CodeCurrentMsg")) return;
+
+        var code = CodeDialog.Ask(this, Loc.Instance["Set_CodeNewTitle"], Loc.Instance["Set_CodeNewMsg"],
+            Loc.Instance["Set_CodeOk"], Loc.Instance["Set_CodeCancel"],
+            typed => typed.Length < ViewOnlyLock.MinLength ? Loc.Instance.Format("Set_CodeTooShort", ViewOnlyLock.MinLength) : null,
+            repeatLabel: Loc.Instance["Set_CodeRepeat"], mismatchText: () => Loc.Instance["Set_CodeMismatch"]);
+        if (code is null) return;
+
+        _codeHash = ViewOnlyLock.Create(code);
+        SaveSettings();
+        UpdateCodeUi();
+        Log(Loc.Instance[changing ? "Msg_ViewOnlyCodeChanged" : "Msg_ViewOnlyCodeSet"]);
+    }
+
+    private void CodeRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if (_codeHash is null || !AskForCurrentCode("Set_CodeEnterTitle", "Set_CodeCurrentMsg")) return;
+        _codeHash = null;
+        SaveSettings();
+        UpdateCodeUi();
+        Log(Loc.Instance["Msg_ViewOnlyCodeRemoved"]);
+    }
+
+    private void UpdateCodeUi()
+    {
+        var locked = _codeHash is not null;
+        CodeStatusText.Text = Loc.Instance[locked ? "Set_CodeOn" : "Set_CodeOff"];
+        CodeSetButton.Content = Loc.Instance[locked ? "Set_CodeChange" : "Set_CodeSet"];
+        CodeRemoveButton.Content = Loc.Instance["Set_CodeRemove"];
+        CodeRemoveButton.IsEnabled = locked;
     }
 
     /// <summary>For handlers that would open a confirmation dialog or start work: say so up front instead of asking and then refusing.</summary>

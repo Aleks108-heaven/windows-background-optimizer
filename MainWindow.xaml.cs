@@ -180,6 +180,7 @@ public partial class MainWindow : Window
             AutoRestorePointCheck.IsChecked = s.AutoRestorePoint;
             PersistPriorityCheck.IsChecked = s.PersistPriority;
             ViewOnlyCheck.IsChecked = s.ViewOnly;
+            _codeHash = s.ViewOnlyCodeHash;
             LoadAlertCheck.IsChecked = s.LoadAlert;
             LoadLimitSlider.Value = s.LoadLimitPercent;
         }
@@ -189,7 +190,8 @@ public partial class MainWindow : Window
 
         // Saved on every change rather than on exit, so a crash or kill can't lose a choice. Unchecking
         // AllowSuspend in code (declined consent dialog) raises Unchecked too, so that is saved as well.
-        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, ViewOnlyCheck, LoadAlertCheck })
+        // View-only mode is not in this list: it saves itself once the change is confirmed (it may ask for a code first).
+        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, LoadAlertCheck })
         {
             box.Checked += (_, _) => SaveSettings();
             box.Unchecked += (_, _) => SaveSettings();
@@ -209,7 +211,9 @@ public partial class MainWindow : Window
             AllowSuspend = AllowSuspendCheck.IsChecked == true,
             AutoRestorePoint = AutoRestorePointCheck.IsChecked == true,
             PersistPriority = PersistPriorityCheck.IsChecked == true,
-            ViewOnly = ViewOnlyCheck.IsChecked == true,
+            // The mode itself, not the switch: while the code prompt is open the switch has already moved but the mode has not.
+            ViewOnly = ViewOnlyMode.Enabled,
+            ViewOnlyCodeHash = _codeHash,
             LoadAlert = LoadAlertCheck.IsChecked == true,
             LoadLimitPercent = (int)Math.Round(LoadLimitSlider.Value),
         }.Save();

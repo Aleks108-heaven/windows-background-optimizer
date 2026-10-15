@@ -11,7 +11,7 @@
     <AssemblyName>BgOptimizer</AssemblyName>
     <RootNamespace>BgOptimizer</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>Background Optimizer</Product>
     <Company>Aleks108-heaven</Company>
     <!-- Needed so a plain "dotnet restore" (no -r flag) still fetches the win-x64

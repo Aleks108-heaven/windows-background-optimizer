@@ -67,6 +67,14 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Only the app's own data (the frozen-process list). Settings it wrote elsewhere in Windows
-; (priority rules, firewall rules, tweaks) are deliberately left alone: undo those in the app first.
-Type: filesandordirs; Name: "{localappdata}\BgOptimizer"
+; Only the app's own data: settings, the action log and the frozen-process list. Settings it wrote elsewhere
+; in Windows (priority rules, firewall rules, tweaks) are deliberately left alone: undo those in the app first.
+; The files are named one by one and the folder is removed only if it is then empty. There is no recursive
+; delete: this runs as administrator on a folder the user's own programs can write to, so it must never walk
+; into whatever a junction or symbolic link planted there might point at.
+Type: files; Name: "{localappdata}\BgOptimizer\settings.json"
+Type: files; Name: "{localappdata}\BgOptimizer\settings.json.tmp"
+Type: files; Name: "{localappdata}\BgOptimizer\actions.log"
+Type: files; Name: "{localappdata}\BgOptimizer\actions.log.1"
+Type: files; Name: "{localappdata}\BgOptimizer\suspended.json"
+Type: dirifempty; Name: "{localappdata}\BgOptimizer"
