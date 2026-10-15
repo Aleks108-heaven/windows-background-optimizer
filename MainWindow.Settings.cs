@@ -15,6 +15,7 @@ public partial class MainWindow
 {
     private readonly LoadSampler _loadSampler = new();
     private readonly LoadWatch _loadWatch = new();
+    private readonly LoadPressure _loadPressure = new();
     private SystemStatsSnapshot _latestStats;
     private ExtraLoad _extraLoad;
     private readonly List<LoadMeter> _meters = new();
@@ -51,6 +52,7 @@ public partial class MainWindow
         CodeSetButton.Click += CodeSet_Click;
         CodeRemoveButton.Click += CodeRemove_Click;
         LoadAlertCheck.Checked += (_, _) => _loadWatch.Reset();
+        AutoOptimizeOnLoadCheck.Checked += (_, _) => _loadPressure.Reset();
         Loc.Instance.PropertyChanged += (_, _) => { RefreshMeterText(); UpdateLoadLimitText(); UpdateCodeUi(); };
 
         // View-only mode means nothing here can be acted on, so rows can't be picked in the lists whose buttons
@@ -125,6 +127,7 @@ public partial class MainWindow
             m.AfterLimit.Width = new GridLength(Math.Max(100 - LoadLimit, 0.0001), GridUnitType.Star);
         }
         _loadWatch.Reset(); // a new limit starts a new count
+        _loadPressure.Reset();
         UpdateLoadPanel();
     }
 
@@ -134,21 +137,33 @@ public partial class MainWindow
     private void UpdateLoadPanel()
     {
         if (_meters.Count == 0) return;
-        var stats = _latestStats;
-        var memoryPercent = stats.TotalMemoryBytes > 0 ? stats.UsedMemoryBytes * 100.0 / stats.TotalMemoryBytes : 0;
-        var loads = new Dictionary<string, double?>
-        {
-            ["cpu"] = stats.CpuPercent,
-            ["mem"] = memoryPercent,
-            ["disk"] = _extraLoad.DiskPercent,
-            ["gpu"] = _extraLoad.GpuPercent,
-        };
+        var loads = CurrentLoads();
 
         foreach (var m in _meters) PaintMeter(m, loads[m.Id]);
 
         if (LoadAlertCheck.IsChecked != true) return;
         foreach (var id in _loadWatch.Evaluate(DateTime.UtcNow, loads, LoadLimit))
             AnnounceHighLoad(id, loads[id]!.Value);
+    }
+
+    private Dictionary<string, double?> CurrentLoads()
+    {
+        var stats = _latestStats;
+        var memoryPercent = stats.TotalMemoryBytes > 0 ? stats.UsedMemoryBytes * 100.0 / stats.TotalMemoryBytes : 0;
+        return new Dictionary<string, double?>
+        {
+            ["cpu"] = stats.CpuPercent,
+            ["mem"] = memoryPercent,
+            ["disk"] = _extraLoad.DiskPercent,
+            ["gpu"] = _extraLoad.GpuPercent,
+        };
+    }
+
+    /// <summary>One sample per refresh for "Optimize automatically when load stays above the limit" (see <see cref="LoadPressure"/>).</summary>
+    private void UpdateLoadPressure()
+    {
+        if (AutoOptimizeOnLoadCheck.IsChecked != true) { _loadPressure.Reset(); return; }
+        _loadPressure.Update(CurrentLoads(), LoadLimit);
     }
 
     private void PaintMeter(LoadMeter m, double? value)

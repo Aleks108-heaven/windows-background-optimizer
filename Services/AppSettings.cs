@@ -26,6 +26,8 @@ internal sealed class AppSettings
     /// <summary>Notify (log, and a tray balloon while hidden) when a load stays above <see cref="LoadLimitPercent"/>.</summary>
     public bool LoadAlert { get; set; }
     public int LoadLimitPercent { get; set; } = DefaultLoadLimit;
+    /// <summary>Trim and slow idle background programs while a load stays above <see cref="LoadLimitPercent"/>; see <see cref="LoadPressure"/>.</summary>
+    public bool AutoOptimizeOnLoad { get; set; }
 
     public const int MinLoadLimit = 50;
     public const int MaxLoadLimit = 100;

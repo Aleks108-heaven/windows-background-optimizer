@@ -7,7 +7,8 @@ public sealed record LeftoverRow(string Kind, string Name, string Path, string S
 
 public sealed record DuplicateRow(int Group, string Name, string Folder, string Size, string Modified, string Path);
 
-public sealed record DriverRow(string Driver, string Version, string Date, string Status, string PublishedName, string Size, string Provider);
+/// <param name="FolderName">The package's folder in the driver store; ties the row back to its scan result for "Open folder" and "Remove selected".</param>
+public sealed record DriverRow(string Driver, string Version, string Date, string Status, string PublishedName, string Size, string Provider, string FolderName = "");
 
 /// <summary>
 /// Turns scan results into grid rows. Rows hold finished text, so the window rebuilds them from the kept
@@ -50,7 +51,8 @@ internal static class CheckRows
                 Loc.Instance[$"Ck_Drv_{c.Status}"],
                 c.Package.PublishedName ?? None,
                 CleanupService.FormatBytes(c.Package.Bytes),
-                c.Package.Provider.Length > 0 ? c.Package.Provider : None))
+                c.Package.Provider.Length > 0 ? c.Package.Provider : None,
+                c.Package.FolderName))
             .ToList();
 
     public static string DuplicateSummary(IReadOnlyCollection<DuplicateGroup> groups) =>

@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using BgOptimizer.Localization;
@@ -61,6 +60,8 @@ public partial class MainWindow
         DupScanButton.IsEnabled = idle;
         DupScanFolderButton.IsEnabled = idle;
         DriverScanButton.IsEnabled = idle;
+        DriverSelectOldButton.IsEnabled = idle;
+        DriverDeleteButton.IsEnabled = idle;
         CheckStopButton.IsEnabled = !idle;
     }
 
@@ -159,7 +160,7 @@ public partial class MainWindow
         OpenInExplorer((DuplicateGrid.SelectedItem as DuplicateRow)?.Path);
 
     /// <summary>Shows the item in Explorer, or its nearest existing parent folder when it is already gone.</summary>
-    private void OpenInExplorer(string? path)
+    private void OpenInExplorer(string? path, bool openFolderItself = false)
     {
         if (string.IsNullOrWhiteSpace(path)) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
         // Some of these paths come from the registry, which other programs can write: handing Explorer a
@@ -167,18 +168,79 @@ public partial class MainWindow
         if (!PathProbe.IsOnLocalFixedDrive(path)) { Log(Loc.Instance["Ck_PathNotLocal"]); return; }
         try
         {
-            var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-            var start = new ProcessStartInfo(explorer) { UseShellExecute = false };
-            if (File.Exists(path) || Directory.Exists(path))
-                start.ArgumentList.Add("/select," + path);
+            bool opened;
+            if (openFolderItself && Directory.Exists(path))
+                opened = ExplorerLauncher.Open(path, select: false);
+            else if (File.Exists(path) || Directory.Exists(path))
+                opened = ExplorerLauncher.Open(path, select: true);
             else
             {
                 var parent = Path.GetDirectoryName(path);
                 if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent)) { Log(Loc.Instance["Ck_PathGone"]); return; }
-                start.ArgumentList.Add(parent);
+                opened = ExplorerLauncher.Open(parent, select: false);
             }
-            Process.Start(start)?.Dispose();
+            if (!opened) Log(Loc.Instance["Ck_PathGone"]);
         }
         catch (Exception ex) { Log(ex.Message); }
+    }
+
+    // ---------- Duplicate drivers: open a copy's folder, remove old unused copies ----------
+
+    private DriverCopy? CopyFor(DriverRow row) =>
+        _driverCopies.FirstOrDefault(c => string.Equals(c.Package.FolderName, row.FolderName, StringComparison.OrdinalIgnoreCase));
+
+    private void DriverOpen_Click(object sender, RoutedEventArgs e)
+    {
+        if (DriverGrid.SelectedItem is not DriverRow { FolderName.Length: > 0 } row) { Log(Loc.Instance["Msg_NothingSelected"]); return; }
+        OpenInExplorer(Path.Combine(DriverStoreScanner.DriverStorePath, row.FolderName), openFolderItself: true);
+    }
+
+    private void DriverSelectOld_Click(object sender, RoutedEventArgs e)
+    {
+        DriverGrid.UnselectAll();
+        var picked = 0;
+        foreach (var row in _driverRows)
+            if (CopyFor(row) is { } copy && DriverStoreCleaner.CanDelete(copy)) { DriverGrid.SelectedItems.Add(row); picked++; }
+        if (picked == 0) Log(Loc.Instance["Ck_DrvNoneDeletable"]);
+    }
+
+    private async void DriverDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewOnlyBlocks()) return;
+        var chosen = DriverGrid.SelectedItems.OfType<DriverRow>()
+            .Select(CopyFor).OfType<DriverCopy>()
+            .Where(DriverStoreCleaner.CanDelete).ToList();
+        if (chosen.Count == 0) { Log(Loc.Instance["Ck_DrvNoneDeletable"]); return; }
+
+        var items = chosen.Select(c =>
+            $"{c.Package.InfName}  {c.Package.Version}  ({c.Package.PublishedName}, {CleanupService.FormatBytes(c.Package.Bytes)})").ToList();
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_ConfirmTitle"], Loc.Instance["Ck_DrvDeleteMsg"], items,
+                danger: true, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+            return;
+
+        await RunCheckAsync(DriverStatusText, async ct =>
+        {
+            if (AutoRestorePointCheck.IsChecked == true)
+                Log(await CreateRestorePointAsync("BgOptimizer: before removing old drivers"));
+
+            long freed = 0;
+            var removed = 0;
+            foreach (var copy in chosen)
+            {
+                if (ct.IsCancellationRequested) break; // between packages only: a pnputil call is never cut short
+                var result = await Task.Run(() => DriverStoreCleaner.Delete(copy));
+                Log(result);
+                if (!result.Ok) continue;
+                removed++;
+                freed += copy.Package.Bytes;
+            }
+            Log(Loc.Instance.Format("Ck_DrvRemovedTotal", removed, CleanupService.FormatBytes(freed)));
+
+            // What is left, relabelled (a group that is down to one copy no longer counts as a duplicate).
+            _driverCopies = await Task.Run(() => DriverStoreScanner.Scan(CancellationToken.None));
+            Fill(_driverRows, CheckRows.ForDrivers(_driverCopies));
+            _driverSummaryKey = "drv";
+            return "drv";
+        });
     }
 }

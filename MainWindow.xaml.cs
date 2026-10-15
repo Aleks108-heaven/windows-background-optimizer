@@ -66,7 +66,8 @@ public partial class MainWindow : Window
         var settings = AppSettings.Load();
         Loc.Instance.Language = settings.Language;
         ActionLog.Write($"=== Started. AutoOptimize={settings.AutoOptimize}, AllowSuspend={settings.AllowSuspend}, " +
-                        $"FreeRamThresholdGb={settings.FreeRamThresholdGb}, PersistPriority={settings.PersistPriority}");
+                        $"FreeRamThresholdGb={settings.FreeRamThresholdGb}, PersistPriority={settings.PersistPriority}, " +
+                        $"AutoOptimizeOnLoad={settings.AutoOptimizeOnLoad} (limit {settings.LoadLimitPercent} %)");
 
         InitializeComponent();
         ApplySettings(settings);
@@ -112,13 +113,17 @@ public partial class MainWindow : Window
         AutoOptimizeCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
         LoadAlertCheck.Checked += (_, _) => ApplyRefreshPolicy();
         LoadAlertCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
+        AutoOptimizeOnLoadCheck.Checked += (_, _) => ApplyRefreshPolicy();
+        AutoOptimizeOnLoadCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
         ApplyRefreshPolicy();
     }
 
     private void ApplyRefreshPolicy()
     {
         if (_closed) return;
-        var run = RefreshPolicy.ShouldRun(IsVisible, AutoOptimizeCheck.IsChecked == true, LoadAlertCheck.IsChecked == true);
+        // Watching the load is the standing job of both the alert and the load-triggered optimizer.
+        var run = RefreshPolicy.ShouldRun(IsVisible, AutoOptimizeCheck.IsChecked == true,
+            LoadAlertCheck.IsChecked == true || AutoOptimizeOnLoadCheck.IsChecked == true);
         if (run == _refreshTimer.IsEnabled) return;
 
         if (run)
@@ -151,7 +156,7 @@ public partial class MainWindow : Window
             // UI thread so the window never stutters during a refresh. Only the results are applied here.
             // Disk and GPU load come from slow WMI queries, so they are only read while someone can see them
             // (the Settings tab is open) or the load alert needs them.
-            var wantExtraLoad = SettingsTab.IsSelected || LoadAlertCheck.IsChecked == true;
+            var wantExtraLoad = SettingsTab.IsSelected || LoadAlertCheck.IsChecked == true || AutoOptimizeOnLoadCheck.IsChecked == true;
             var (fresh, battery, extra) = await Task.Run(() =>
                 (_processMonitor.Refresh(), _battery.GetHealth(), wantExtraLoad ? _loadSampler.Sample() : (ExtraLoad?)null));
             if (_closed) return;
@@ -161,6 +166,7 @@ public partial class MainWindow : Window
             ApplyBattery(battery);
             if (extra is { } sampled) _extraLoad = sampled;
             UpdateLoadPanel();
+            UpdateLoadPressure(); // once per refresh, so "several refreshes in a row" means that
             AutoOptimizeTick();
         }
         catch (Exception ex) { Log(ex.Message); }
@@ -192,6 +198,7 @@ public partial class MainWindow : Window
             PersistPriorityCheck.IsChecked = s.PersistPriority;
             ViewOnlyCheck.IsChecked = viewOnly;
             LoadAlertCheck.IsChecked = s.LoadAlert;
+            AutoOptimizeOnLoadCheck.IsChecked = s.AutoOptimizeOnLoad;
             LoadLimitSlider.Value = s.LoadLimitPercent;
         }
         finally { _loadingSettings = false; }
@@ -201,7 +208,7 @@ public partial class MainWindow : Window
         // Saved on every change rather than on exit, so a crash or kill can't lose a choice. Unchecking
         // AllowSuspend in code (declined consent dialog) raises Unchecked too, so that is saved as well.
         // View-only mode is not in this list: it saves itself once the change is confirmed (it may ask for a code first).
-        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, LoadAlertCheck })
+        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, LoadAlertCheck, AutoOptimizeOnLoadCheck })
         {
             box.Checked += (_, _) => SaveSettings();
             box.Unchecked += (_, _) => SaveSettings();
@@ -224,6 +231,7 @@ public partial class MainWindow : Window
             // Informational only: the mode and the code are kept in LockStore, and this value is read back just once.
             ViewOnly = ViewOnlyMode.Enabled,
             LoadAlert = LoadAlertCheck.IsChecked == true,
+            AutoOptimizeOnLoad = AutoOptimizeOnLoadCheck.IsChecked == true,
             LoadLimitPercent = (int)Math.Round(LoadLimitSlider.Value),
         }.Save();
     }
@@ -627,30 +635,47 @@ public partial class MainWindow : Window
         _workloadOptimizer.UpdateStreaks(_processes, foreground);
         ReleaseForeground(foreground);
 
-        if (AutoOptimizeCheck.IsChecked != true)
+        // Two independent triggers: free RAM under the threshold (the Auto-Optimize switch) and a load held above
+        // the limit (the Settings switch). Either one starts the same gentle action; both must be over to release.
+        var byRam = AutoOptimizeCheck.IsChecked == true;
+        var byLoad = AutoOptimizeOnLoadCheck.IsChecked == true;
+        if (!byRam && !byLoad)
         {
             _belowThreshold = false;
             if (_autoThrottled.Count > 0 || _autoSuspended.Count > 0) RestoreAutoThrottled();
             return;
         }
 
-        // Invariant parsing (accepting a comma too): with the current culture "2.5" reads as 25 in
-        // locales where "." is the thousands separator, which would keep throttling permanently on.
-        if (!double.TryParse(AutoOptimizeThresholdBox.Text.Trim().Replace(',', '.'),
-                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
-                out var thresholdGb) || thresholdGb <= 0) thresholdGb = 2;
-        var thresholdBytes = (long)(thresholdGb * BytesPerGb);
+        var ramPressure = false;
+        var ramRecovered = true;
+        var thresholdGb = 2.0;
+        long freeBytes = 0;
+        if (byRam)
+        {
+            // Invariant parsing (accepting a comma too): with the current culture "2.5" reads as 25 in
+            // locales where "." is the thousands separator, which would keep throttling permanently on.
+            if (!double.TryParse(AutoOptimizeThresholdBox.Text.Trim().Replace(',', '.'),
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+                    out thresholdGb) || thresholdGb <= 0) thresholdGb = 2;
+            var thresholdBytes = (long)(thresholdGb * BytesPerGb);
 
-        var stats = _systemStats.Sample();
-        var freeBytes = stats.TotalMemoryBytes - stats.UsedMemoryBytes;
+            var stats = _systemStats.Sample();
+            freeBytes = stats.TotalMemoryBytes - stats.UsedMemoryBytes;
+            ramPressure = freeBytes < thresholdBytes;
+            ramRecovered = freeBytes > thresholdBytes + HysteresisBytes;
+        }
+        var loadPressure = byLoad && _loadPressure.Active;
+        var loadRecovered = !loadPressure;
 
-        if (freeBytes < thresholdBytes)
+        if (ramPressure || loadPressure)
         {
             if (!_belowThreshold)
             {
                 _belowThreshold = true;
-                ActionLog.Write($"Memory pressure: {FormatGb(freeBytes)} GB free is below the {thresholdGb:0.##} GB threshold; " +
-                                $"Auto-Optimize is {(ViewOnlyMode.Enabled ? "only observing (view-only mode)" : "acting")}.");
+                var why = ramPressure
+                    ? $"Memory pressure: {FormatGb(freeBytes)} GB free is below the {thresholdGb:0.##} GB threshold"
+                    : $"Load pressure: {string.Join(", ", _loadPressure.Causes)} stayed above the {LoadLimit} % limit";
+                ActionLog.Write($"{why}; Auto-Optimize is {(ViewOnlyMode.Enabled ? "only observing (view-only mode)" : "acting")}.");
             }
             if (ViewOnlyMode.Enabled)
             {
@@ -671,7 +696,8 @@ public partial class MainWindow : Window
                 }
             }
 
-            if (AllowSuspendCheck.IsChecked == true)
+            // Freezing is the stronger step the user agreed to for low free RAM; a high load alone never triggers it.
+            if (ramPressure && AllowSuspendCheck.IsChecked == true)
             {
                 var longIdle = _workloadOptimizer.GetLongIdleCandidates(_processes, foreground);
                 if (longIdle.Count > 0 && !_autoSuspendConsentGiven)
@@ -706,12 +732,14 @@ public partial class MainWindow : Window
                 ? Loc.Instance.Format("Lbl_SuspendedCount", _autoSuspended.Count)
                 : "";
         }
-        else if (freeBytes > thresholdBytes + HysteresisBytes)
+        else if (ramRecovered && loadRecovered)
         {
             if (_belowThreshold)
             {
                 _belowThreshold = false;
-                ActionLog.Write($"Memory pressure over: {FormatGb(freeBytes)} GB free; releasing anything Auto-Optimize changed.");
+                ActionLog.Write(byRam
+                    ? $"Memory pressure over: {FormatGb(freeBytes)} GB free; releasing anything Auto-Optimize changed."
+                    : "Load pressure over: every load is back under the limit; releasing anything Auto-Optimize changed.");
             }
             _wouldAct.Clear(); // a later episode may name the same processes again
             RestoreAutoThrottled();

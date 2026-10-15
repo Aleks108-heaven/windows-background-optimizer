@@ -381,6 +381,9 @@
                                 <TextBlock Grid.Row="0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvHint]}"/>
                                 <WrapPanel Grid.Row="1" Margin="0,6,0,0">
                                     <Button x:Name="DriverScanButton" Style="{StaticResource BtnPrimary}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_Scan]}" Click="DriverScan_Click"/>
+                                    <Button x:Name="DriverOpenButton" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvOpenFolder]}" Click="DriverOpen_Click"/>
+                                    <Button x:Name="DriverSelectOldButton" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvSelectOld]}" Click="DriverSelectOld_Click"/>
+                                    <Button x:Name="DriverDeleteButton" Style="{StaticResource BtnDanger}" Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Ck_DrvDelete]}" Click="DriverDelete_Click"/>
                                     <TextBlock x:Name="DriverStatusText" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                                 </WrapPanel>
                                 <DataGrid x:Name="DriverGrid" Grid.Row="2" MinHeight="120" Margin="0,6,0,0" RowStyle="{StaticResource BaseRowStyle}"
@@ -499,6 +502,11 @@
                                   Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadAlert]}"/>
                         <TextBlock Margin="50,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
                                    Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadAlertHint]}"/>
+
+                        <CheckBox x:Name="AutoOptimizeOnLoadCheck" Style="{StaticResource ToggleSwitch}" Margin="0,14,0,0"
+                                  Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadOptimize]}"/>
+                        <TextBlock Margin="50,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadOptimizeHint]}"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
