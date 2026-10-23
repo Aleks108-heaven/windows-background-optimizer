@@ -16,24 +16,48 @@ public class BatteryManager
 {
     public record BatteryHealth(int? DesignMWh, int? FullChargeMWh, int? Percent, bool? Charging, int? RateMw);
 
+    // Design and full-charge capacity change over months, not seconds, and each WMI read wakes the battery's
+    // embedded controller; re-reading them on every refresh was pure cost. The live status is still read each time.
+    private static readonly TimeSpan CapacityCacheFor = TimeSpan.FromMinutes(10);
+    private readonly object _capacityGate = new();
+    private (int? Design, int? Full, DateTime ReadAt)? _capacity;
+
+    private (int? Design, int? Full) Capacity()
+    {
+        lock (_capacityGate)
+        {
+            if (_capacity is { } cached && DateTime.UtcNow - cached.ReadAt < CapacityCacheFor)
+                return (cached.Design, cached.Full);
+
+            var design = ReadWmiUInt(@"root\wmi", "BatteryStaticData", "DesignedCapacity");
+            var full = ReadWmiUInt(@"root\wmi", "BatteryFullChargedCapacity", "FullChargedCapacity");
+            _capacity = (design, full, DateTime.UtcNow);
+            return (design, full);
+        }
+    }
+
     public BatteryHealth GetHealth()
     {
-        int? design = ReadWmiUInt(@"root\wmi", "BatteryStaticData", "DesignedCapacity");
-        int? full = ReadWmiUInt(@"root\wmi", "BatteryFullChargedCapacity", "FullChargedCapacity");
+        var (design, full) = Capacity();
 
         bool? charging = null;
         int? rate = null;
         int? remaining = null;
         try
         {
+            // Every WMI object is disposed: they wrap native COM objects that otherwise wait for the garbage collector.
             using var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT Charging, ChargeRate, DischargeRate, RemainingCapacity FROM BatteryStatus");
-            var o = searcher.Get().Cast<ManagementObject>().FirstOrDefault();
-            if (o != null)
+            using var results = searcher.Get();
+            foreach (ManagementBaseObject o in results)
             {
-                charging = o["Charging"] as bool?;
-                rate = charging == true ? o["ChargeRate"] as uint? is uint c ? (int)c : null
-                                         : o["DischargeRate"] as uint? is uint d ? (int)d : null;
-                remaining = o["RemainingCapacity"] as uint? is uint r ? (int)r : null;
+                using (o)
+                {
+                    charging = o["Charging"] as bool?;
+                    rate = charging == true ? o["ChargeRate"] as uint? is uint c ? (int)c : null
+                                             : o["DischargeRate"] as uint? is uint d ? (int)d : null;
+                    remaining = o["RemainingCapacity"] as uint? is uint r ? (int)r : null;
+                }
+                break;
             }
         }
         catch { }
@@ -53,8 +77,11 @@ public class BatteryManager
         try
         {
             using var searcher = new ManagementObjectSearcher(ns, $"SELECT {field} FROM {wmiClass}");
-            var o = searcher.Get().Cast<ManagementObject>().FirstOrDefault();
-            return o?[field] switch { uint u => (int)u, ushort s => (int)s, _ => null };
+            using var results = searcher.Get();
+            foreach (ManagementBaseObject o in results)
+                using (o)
+                    return o[field] switch { uint u => (int)u, ushort s => (int)s, _ => null };
+            return null;
         }
         catch { return null; }
     }
@@ -127,7 +154,7 @@ public class BatteryManager
         }
     }
 
-    private static (int Code, string Output) RunPowercfg(string args)
+    internal static (int Code, string Output) RunPowercfg(string args)
     {
         try
         {

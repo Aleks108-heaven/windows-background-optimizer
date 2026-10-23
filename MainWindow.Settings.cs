@@ -139,11 +139,20 @@ public partial class MainWindow
         if (_meters.Count == 0) return;
         var loads = CurrentLoads();
 
-        foreach (var m in _meters) PaintMeter(m, loads[m.Id]);
+        // Nothing is painted for a window nobody can see; it is painted when the window comes back.
+        if (IsVisible) PaintLoadPanel(loads);
 
         if (LoadAlertCheck.IsChecked != true) return;
         foreach (var id in _loadWatch.Evaluate(DateTime.UtcNow, loads, LoadLimit))
             AnnounceHighLoad(id, loads[id]!.Value);
+    }
+
+    /// <summary>Only paints. Kept apart from <see cref="UpdateLoadPanel"/> because that also counts a sample towards the alert.</summary>
+    private void PaintLoadPanel(Dictionary<string, double?>? loads = null)
+    {
+        if (_meters.Count == 0) return;
+        loads ??= CurrentLoads();
+        foreach (var m in _meters) PaintMeter(m, loads[m.Id]);
     }
 
     private Dictionary<string, double?> CurrentLoads()
@@ -206,13 +215,16 @@ public partial class MainWindow
         {
             "cpu" => _processes.Where(p => p.CpuKnown && p.CpuPercent >= 1)
                 .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(g => (Name: g.Key, Rank: g.Sum(p => p.CpuPercent), Text: $"{g.Sum(p => p.CpuPercent):0}%")),
+                .Select(g => (Name: Labelled(g.Key, g.Count()), Rank: g.Sum(p => p.CpuPercent), Text: $"{g.Sum(p => p.CpuPercent):0}%")),
             "mem" => _processes.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(g => (Name: g.Key, Rank: (double)g.Sum(p => p.MemoryBytes), Text: CleanupService.FormatBytes(g.Sum(p => p.MemoryBytes)))),
+                .Select(g => (Name: Labelled(g.Key, g.Count()), Rank: (double)g.Sum(p => p.MemoryBytes), Text: CleanupService.FormatBytes(g.Sum(p => p.MemoryBytes)))),
             _ => Enumerable.Empty<(string Name, double Rank, string Text)>(),
         };
         return string.Join(", ", top.OrderByDescending(t => t.Rank).Take(3).Select(t => $"{t.Name} {t.Text}"));
     }
+
+    /// <summary>"svchost" alone reads as one hog; Windows runs dozens of them, so a group of several says how many ("svchost ×84").</summary>
+    internal static string Labelled(string name, int instances) => instances > 1 ? $"{name} ×{instances}" : name;
 
     // ---------- View-only mode ----------
 
@@ -360,8 +372,11 @@ public partial class MainWindow
     // The tab's SelectionChanged also bubbles up from combo boxes and grids inside the tabs.
     private void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!ReferenceEquals(e.OriginalSource, MainTabs) || !SettingsTab.IsSelected) return;
-        // Fresh disk/GPU numbers as soon as the tab opens, rather than after the next 5 s tick.
-        if (_refreshTimer.IsEnabled) _ = TickAsync();
+        if (!ReferenceEquals(e.OriginalSource, MainTabs)) return;
+        // Fresh numbers as soon as the tab opens, rather than after the next 5 s tick: disk/GPU load and the thermal
+        // readout (Settings), the battery line (Security). Those are only read while their tab is showing.
+        if ((SettingsTab.IsSelected || SecurityTab.IsSelected) && _refreshTimer.IsEnabled) _ = TickAsync();
+        // The power plan can be changed elsewhere, so the speed limit shown is read again whenever the tab opens.
+        if (SettingsTab.IsSelected) _ = RefreshCpuLimitAsync();
     }
 }

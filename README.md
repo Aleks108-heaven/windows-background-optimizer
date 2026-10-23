@@ -28,6 +28,8 @@ A Windows 11 desktop app (WPF/.NET) for seeing and controlling what's running in
 - **Self-re-enabling programs.** If a program you disabled here is enabled again at the next refresh (it rewrote its own entry, or something else re-enabled it), the log says so once. Managed (Group Policy / MDM) entries appear under *Policy* and cannot be switched here. After Fast Startup or hibernation the "next login" may not re-read startup entries; a full restart does.
 - **Category** column — a best-effort hint (Telemetry / Core / Developer Tool / Vendor-Diagnostics / Uncategorized) based on name patterns, to help you decide what's safe to touch. It's a suggestion, not a verdict — the app never selects or acts on items based on it, and the same task can be safe for one person and load-bearing for another.
 
+- **Leftover `.disabled` files are repaired.** Versions up to 1.2.x switched a Startup-folder shortcut off by renaming it to `name.lnk.disabled`. Windows tries to open every file in a Startup folder at sign-in, so those copies made it ask "Which app do you want to use to open this .disabled file?" on every start (seen on several laptops). On every refresh the app now moves such a copy back to its real name and switches it off with the same `StartupApproved` flag Task Manager uses, so the item stays exactly as off as you left it and the question stops. If a real copy already exists, the stale one is moved (never deleted or overwritten) to `%LocalAppData%\BgOptimizer\legacy-startup`. Only startup-type files (`.lnk .url .cmd .bat .exe .vbs .js .ps1 .appref-ms`) are touched, hidden/system files and links are skipped, the Startup folder must lie inside your profile (all-users: ProgramData) and not be a junction, and nothing is done in view-only mode. Each file is written to the action log (`STARTUP_REPAIR_LEGACY`).
+
 ### Services tab
 
 - Lists all Windows services with their current status, startup type, and the same best-effort **Category** hint as Startup Apps.
@@ -67,6 +69,10 @@ Settings that are simply on or off (Auto-Optimize, Allow suspend, Persist across
 - **System load.** Live bars for CPU, memory, disk activity and GPU, refreshed with the normal 5-second refresh while the window is open. A white line on each bar is your **load limit**, set with the slider (50-100 %, default 90 %); a bar turns red above it and says "above limit", so colour is never the only signal. Disk and GPU come from the WMI performance classes (same names on every Windows language) and are only read while this tab is open or the alert is on; GPU is the busiest engine type (3D, copy, video decode, ...), like Task Manager, and shows "not available" on a machine that does not report it.
 - **Notify me when load stays above the limit** (off by default). After three samples in a row above the limit (about 15 s) it writes one line naming the busiest programs (CPU and memory), and shows a tray notification if the window is hidden, at most once per load every 5 minutes. While it is on, the app keeps refreshing even when hidden in the tray. It only informs.
 - **Optimize automatically when load stays above the limit** (off by default). The same limit, but it acts: once any of CPU, memory, disk or GPU has been above the limit for three refreshes in a row (about 15 s), the same gentle step as Auto-Optimize is applied to background programs that have been idle for a while: their RAM is trimmed and their priority lowered to BelowNormal. It stays in force until every load has been at least 5 points under the limit for three refreshes (so it does not flip on and off at the line), then everything it changed is restored. The program you are using, browsers, audio apps, security software and local-AI tools are never touched (the same lists as Auto-Optimize), and a load alone never freezes anything: **Allow suspending long-idle apps** stays tied to low free RAM. In view-only mode it only logs what it would have done. It is independent of the RAM-based **Auto-Optimize** switch (use either or both) and does not depend on the PC's size, so it applies the same on an 8 GB laptop. Because it only touches idle programs, it helps most when memory or disk (paging) is the bottleneck; it cannot reduce CPU load made by the program you are actively using. The action log records when it starts and ends (`Load pressure: ...`).
+- **Load readings are cheap.** Disk and GPU load are read through the Windows Performance Data Helper (the counters Task Manager's numbers come from, by their English names, so any Windows language works), not through WMI. A sample takes a few milliseconds; the WMI queries it replaced took about 0.6 s of wall time and roughly 0.4 CPU-seconds each on a fast laptop CPU, every few seconds, even while the window was hidden, which is a constant drain on an old dual-core. Nothing is drawn while the window is hidden, the battery line is only read while the Security tab is showing, and the temperature readout only while the Settings tab is.
+- **Programs to never touch.** A comma-separated list of program names (for example `AnyDesk, MyVpnClient`). Auto-Optimize, Laptop saver, trimming, freezing and Persist across restarts skip them, with no override. For corporate agents that sit idle but must stay reachable and that no built-in list can know. Names may contain spaces; `.exe` is dropped; paths, wildcards and anything over 64 characters are ignored, at most 100 names count, and a hand-edited `settings.json` is validated the same way.
+- **Cooling.** Shows what Windows reports (hottest ACPI thermal zone, whether Windows is slowing the CPU to cool it, CPU speed as a share of its maximum; read-only, no driver, no administrator rights; some laptops report a fixed or no temperature) and offers the one safe lever: a **CPU speed limit** (90/80/70/60 % of top speed, plugged in and on battery) in the current power plan, via powercfg. It is read back after writing and reported as failed (and put back) if Windows did not accept it; **Undo Last Change** restores the previous values. This is deliberately **not a fan controller**: fan speed belongs to the laptop's firmware (on ASUS: MyASUS, Fan mode), Windows has no safe interface for it, and reaching it from user mode needs a kernel driver, which an app that runs as administrator should not ship.
+
 ### System tray
 
 Minimizing the window sends it to the system tray (look for the blue "B" icon — Windows may tuck new tray icons behind the `^` "show hidden icons" arrow near the clock the first time). Double-click the tray icon, or right-click → **Open**, to restore it. Right-click → **Exit** fully quits the app; on the way out it restores any priorities it lowered and resumes any process it froze, so nothing is left suspended once the app is gone. If the app is instead crashed or force-killed while something is frozen, that process stays frozen until the app is started again: every freeze is recorded (process name and start time) in `%LocalAppData%\BgOptimizer\suspended.json`, and the next launch resumes whatever on that list is still the same process and logs how many it released. A recycled process ID is never resumed.
@@ -75,7 +81,7 @@ Only one copy of the app runs at a time: starting a second copy (for example by 
 
 ### Saved settings
 
-These choices are remembered between launches, in `%LocalAppData%\BgOptimizer\settings.json`, and saved the moment you change them (not only on exit, so a crash or kill can't lose them): the language, **Auto-Optimize** on/off, its free-RAM threshold, **Allow suspending long-idle apps**, **Auto restore point before risky changes**, **Persist across restarts** (next to Apply Priority), the load alert, the load limit and **Optimize automatically when load stays above the limit**.
+These choices are remembered between launches, in `%LocalAppData%\BgOptimizer\settings.json`, and saved the moment you change them (not only on exit, so a crash or kill can't lose them): the language, **Auto-Optimize** on/off, its free-RAM threshold, **Allow suspending long-idle apps**, **Auto restore point before risky changes**, **Persist across restarts** (next to Apply Priority), the load alert, the load limit, **Optimize automatically when load stays above the limit** and the **programs to never touch**.
 
 Two things are deliberately not remembered. **Allow throttling interactive apps** starts unticked on every launch, because it is the override that can make browsers and shell surfaces lag. The priority dropdown also starts at Normal. If Auto-Optimize and the suspend option were left on, they are on again at the next launch, and the suspend tier still asks for confirmation the first time it is about to freeze something in each session. A missing, corrupt or hand-edited settings file is ignored field by field: unusable values fall back to the defaults (everything unattended is off, language English, threshold 2 GB). To reset everything, exit the app and delete `settings.json`.
 
@@ -85,7 +91,7 @@ Everything the app does is also appended to `%LocalAppData%\BgOptimizer\actions.
 
 ## Idle when hidden
 
-Minimised to the tray, the app stays one click away but stops polling (no process scans, no WMI battery queries) as long as **Auto-Optimize is off**. Opening the window resumes it at once with fresh data. With Auto-Optimize on it keeps running while hidden, because watching memory and releasing what it changed is its standing job; turning Auto-Optimize off while hidden first releases anything it had throttled or frozen, then idles. Both transitions are written to the action log.
+Minimised to the tray, the app stays one click away but stops polling (no process scans, no battery or load queries) as long as **Auto-Optimize is off**. Opening the window resumes it at once with fresh data. With Auto-Optimize on it keeps running while hidden, because watching memory and releasing what it changed is its standing job; turning Auto-Optimize off while hidden first releases anything it had throttled or frozen, then idles. Both transitions are written to the action log.
 
 ## Cleanup
 
@@ -121,6 +127,11 @@ This app runs elevated (admin) because managing services and killing other proce
 
 The protected/interactive/security-tool lists can't know about every third-party or OEM (e.g. laptop vendor) process or service, so exercise the same judgment yourself there — prefer **Manual** over **Disabled** for anything you're not 100% sure about, change one thing at a time, and lean on the Category hint and Restore Point button above for anything you're unsure about.
 
+9a. **Work-agent list** (same file) — messengers and mail (Slack, Telegram, Outlook, ...), VPN and zero-trust clients (OpenVPN, WireGuard, Tailscale, GlobalProtect, Zscaler, ...), remote access (AnyDesk, TeamViewer, RustDesk, ...), sync clients (OneDrive, Dropbox, Google Drive, ...), password managers and VM/container hosts (VMware, VirtualBox, Docker Desktop). They sit near 0% CPU while waiting for the next message, packet or sync request, which the idle detector reads as "doing nothing"; freezing or slowing one means missed notifications, a dropped tunnel, a dead remote-support session, a frozen virtual machine, or a sync provider that hangs Explorer. Treated like interactive apps by every guard (Auto-Optimize, auto-suspend, Laptop saver, persistent rules).
+9b. **Windows/driver helpers** (same file) — the Wi-Fi extension (`wlanext`), device association (`dasHost`), Windows Hello isolation (`NgcIso`, `BioIso`, `LsaIso`), and the AMD, Intel and graphics power/thermal helpers (`amdpmfservice`, `esif_uf`, `igfx*`, ...). They are idle by CPU almost always, take part in sleep and wake, and a priority rule in the registry applies from the moment they start. They are never slowed, trimmed or frozen by any route, with no override (raising a priority is still allowed). This was added after a run of hard freezes right after resume from Modern Standby; it is **not** proven that slowed helpers caused them, but slowing them gains nothing.
+9c. **Leftover permanent rules are removed at start.** Idle or Below-normal rules in Image File Execution Options on interactive apps, work agents and Windows/driver helpers (which older versions or a rule set by hand can leave behind, invisibly) are removed when the app starts, written to the action log (`IFEO_CLEAR`, with the value each had) and reported in the Activity Log. Normal-or-higher rules are your choice and are kept, and so are rules on audio apps, local-AI tools and anything not in those groups. It needs administrator rights and does nothing in view-only mode.
+9d. **Small-RAM laptops.** The free-RAM threshold is never allowed to exceed a third of the installed memory (a fixed 2 GB is half of a 4 GB laptop, where Auto-Optimize could otherwise never stand down); when the cap applies the Activity Log says so once. A program is trimmed at most once per 10 minutes, because a trim makes RAM look recovered, Auto-Optimize then releases everything, the pages fault back in and the cycle would repeat. The busiest-programs line now shows how many processes a name stands for (`svchost ×84`), since Windows runs dozens and the total is not one leaking program.
+
 ## Security notes
 
 The app runs as administrator by design (it manages services, firewall rules and registry keys), so what it reads and writes is treated as a security boundary:
@@ -131,6 +142,7 @@ The app runs as administrator by design (it manages services, firewall rules and
 - **Publisher is a label, not a verification** (see the Startup tab). Binaries and the installer are **unsigned**: Windows SmartScreen / Smart App Control may warn or block them until they are code-signed. Each release lists SHA-256 checksums; compare them before running a download. Release files are built by the CI workflow and carry a signed **build attestation** (which commit and workflow produced them), which you can check with the GitHub CLI: `gh attestation verify <file> --repo Aleks108-heaven/windows-background-optimizer`. That proves where a file came from; it is not a substitute for code signing.
 - **Build supply chain.** No known-vulnerable or deprecated NuGet packages at release time (`dotnet list package --vulnerable --include-transitive`). Test packages are pinned to exact versions and the CI actions to commit SHAs. There is no NuGet lock file yet; adding one (`RestorePackagesWithLockFile`) is a sensible next step.
 - **Uninstall.** The Inno uninstaller deletes only the files the app writes in `%LocalAppData%\BgOptimizer` of the installing user (settings, action log, frozen-process list), by name, and then removes the folder only if it is empty. It never deletes recursively, so a junction or symbolic link planted there is not followed. Anything else you put in that folder is left for you to delete.
+
 ## Requirements
 
 **To just run a pre-built copy** (no dev tools needed):
@@ -236,22 +248,22 @@ Or run the compiled executable directly: `bin/Debug/net10.0-windows/BgOptimizer.
 dotnet test tests/BgOptimizer.Tests
 ```
 
-xUnit tests cover the safety rules (protected / interactive / security-tool / audio-app lists, the live-identity check on kill, priority, suspend and resume, firewall-block refusals), the idle-detection logic (including that its thresholds hold at a different refresh interval), the saved list of frozen processes and its recycled-PID check, the saved settings (round trip, corrupt/missing file, invalid values), the service start-mode mapping, the Category classifier, and the parsers for `powercfg` output and firewall rules (checked with non-English labels). Tests that act on a process only ever touch a `ping.exe` child they start themselves; nothing changes system settings. CI runs them on every push.
+xUnit tests cover the safety rules (protected / interactive / security-tool / audio-app lists, the live-identity check on kill, priority, suspend and resume, firewall-block refusals), the idle-detection logic (including that its thresholds hold at a different refresh interval), the saved list of frozen processes and its recycled-PID check, the saved settings (round trip, corrupt/missing file, invalid values), the service start-mode mapping, the Category classifier, and the parsers for `powercfg` output and firewall rules (checked with non-English labels). Newer tests cover the PDH sampler on the real machine (and its failure paths), the thermal combine rules, the CPU-limit parser, the RAM cap, the trim cooldown, the three never-touch groups across every route, the permanent-rule cleanup (with an injected store and log), the `.disabled` repair (temp folders, a junction, view-only mode), and parity of every new string across all seven languages. Tests that act on a process only ever touch a `ping.exe` child they start themselves, and nothing changes system settings: the repair tests use temp folders and a throwaway key under `HKCU\Software\BgOptimizerTests` that is deleted afterwards, and none of them write to the real action log. CI runs them on every push.
 
 ## Project structure
 
 ```text
 App.xaml(.cs)               Application entry point; single-instance check
-MainWindow.xaml(.cs)        Main UI and event handlers (MainWindow.Checks.cs, .Settings.cs and .Startup.cs hold the Checks tab, the Settings tab and the Startup extras)
+MainWindow.xaml(.cs)        Main UI and event handlers (MainWindow.Checks.cs, .Settings.cs, .Cooling.cs and .Startup.cs hold the Checks tab, the Settings tab, its Cooling section and the Startup extras)
 ConfirmDialog.xaml(.cs)    Themed confirmation dialog (lists affected items; Cancel is default for destructive actions)
 Theme.xaml                  Colour tokens and control styles (buttons, tabs, grids, ComboBox)
 Converters/                 Severity rules + brush/glyph/weight converters for the grids
 Models/                     Data models (ProcessEntry, StartupEntry, ServiceEntry, ItemCategory) and the Checks tab's grid rows
 Services/
   ProcessMonitor.cs         Process enumeration, CPU% sampling, kill/priority/suspend-resume
-  StartupManager.cs         Startup item enumeration and enable/disable (Run keys, Startup folders, Scheduled Tasks)
+  StartupManager.cs         Startup item enumeration and enable/disable (Run keys, Startup folders, Scheduled Tasks) and the repair of leftover `.disabled` copies
   SvcManager.cs              Windows service enumeration and start-type/stop/start control (via WMI)
-  ProtectedItems.cs         The safety deny-lists (protected, interactive, security-tool, audio apps)
+  ProtectedItems.cs         The safety deny-lists (protected, interactive, security-tool, audio apps, work agents, Windows/driver helpers, the user's own list)
   CleanupService.cs         Age-filtered, junction-safe deletion of temp files, old logs and caches (Cleanup tab)
   LeftoverScanner.cs        Leftovers of deleted programs: deleted-but-loaded files, broken Installed-apps entries, orphan folders (Checks tab)
   DuplicateFinder.cs        Duplicate files by size, partial hash, then SHA-256 (Checks tab)
@@ -264,7 +276,11 @@ Services/
   ViewOnlyMode.cs           The view-only switch and the refusal every changing service returns while it is on
   ViewOnlyLock.cs           The optional code that keeps view-only mode on (salted PBKDF2 hash, wrong-try delay)
   LockStore.cs              Administrator-only registry key holding the view-only mode, the code hash and the wrong-try count
-  LoadSampler.cs / LoadWatch.cs  Disk and GPU load (WMI) and the 'sustained above the limit' rule for the load alert
+  PdhQuery.cs               Performance Data Helper query (SafeHandle, System32-only DLL, bounds-checked buffers) used by the samplers below
+  LoadSampler.cs / LoadWatch.cs  Disk and GPU load (PDH) and the 'sustained above the limit' rule for the load alert
+  ThermalSampler.cs         Temperature, thermal limit and CPU speed readout (PDH, read-only)
+  CoolingManager.cs         The CPU speed limit in the current power plan (powercfg, read back after writing)
+  RamPolicy.cs              Caps the free-RAM threshold at a third of the installed memory
   StartupApprovedValue.cs   Reads/writes the Task Manager on/off flag for startup items
   StartupSafety.cs          Which startup items cannot be disabled here (security software, Windows components, this app)
   PublisherInfo.cs / CommandPath.cs  Publisher label for a file; program path from a command line (untrusted text, never run)
@@ -274,7 +290,7 @@ Services/
   AppSettings.cs            Remembered checkbox/threshold/language choices (settings.json)
   BatteryManager.cs         Battery health and the hibernate-on-lid-close / hibernate-after setting
   ItemClassifier.cs         Best-effort Category labeling for Startup Apps/Services
-  PriorityPersistence.cs    Persistent process priority via Image File Execution Options
+  PriorityPersistence.cs    Persistent process priority via Image File Execution Options, and the start-up removal of leftover slow-down rules
   SecurityManager.cs        WinRM, SMB block, per-app outbound firewall rules (netsh)
   TweakManager.cs           Curated reversible registry tweaks with exact-value undo
   SystemRestoreService.cs   System Restore point creation (via the SystemRestore WMI class)

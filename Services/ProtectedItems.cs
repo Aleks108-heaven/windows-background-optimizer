@@ -49,12 +49,101 @@ internal static class ProtectedItems
         return false;
     }
 
-    // Audio apps are included here so every existing guard (SetPriority, suspend, enforce loop,
-    // Laptop Saver, WorkloadOptimizer) protects them without each needing its own check.
-    public static bool IsInteractive(string processName) =>
-        InteractiveProcessNames.Contains(processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? processName[..^4] : processName)
-        || IsAudioApp(processName);
+    // Work agents that sit at ~0% CPU yet must stay reachable: the idle detector cannot tell "waiting for the next
+    // message / packet / sync request" from "doing nothing", and freezing or slowing one means missed chat and mail
+    // notifications, a dropped VPN tunnel, a dead remote-support session, a sync provider that hangs Explorer (a
+    // frozen OneDrive stalls every open dialog on a cloud file), a password manager that stops filling, or a frozen
+    // virtual machine. Messengers and mail, VPN and zero-trust clients, remote access, sync, password managers,
+    // VM/container hosts. Treated like interactive apps by every guard that already checks IsInteractive; the
+    // "never touch" list in Settings covers the corporate agents nobody can enumerate.
+    public static readonly HashSet<string> AlwaysOnAgentNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "slack", "Telegram", "WhatsApp", "Signal", "Viber", "Skype", "OUTLOOK", "olk", "HxOutlook", "thunderbird",
+        "Webex", "webexmta", "CiscoCollabHost", "Mattermost", "Element",
+        "openvpn", "openvpn-gui", "openvpnserv", "openvpnserv2", "WireGuard", "wireguard", "tailscale-ipn", "tailscaled",
+        "NordVPN", "nordvpn-service", "ExpressVPN", "expressvpnd", "ProtonVPN", "ProtonVPNService", "vpnagent", "vpnui",
+        "FortiClient", "FortiTray", "FortiSSLVPNdaemon", "PanGPA", "ZSATunnel", "ZSAService", "ZSATray", "cloudflared",
+        "warp-svc", "Cloudflare WARP", "PulseSecureService", "pulsesecure", "NetExtender",
+        "AnyDesk", "TeamViewer", "TeamViewer_Service", "rustdesk", "ScreenConnect.ClientService",
+        "ScreenConnect.WindowsClient", "mstsc", "parsecd", "winvnc", "tvnserver", "LogMeIn", "SRService", "SRManager",
+        "OneDrive", "Dropbox", "GoogleDriveFS", "googledrivesync", "syncthing", "Nextcloud", "MEGAsync", "BoxSync", "pCloud",
+        "1Password", "Bitwarden", "KeePass", "KeePassXC", "Dashlane", "NordPass", "LastPass",
+        "vmware-vmx", "vmware-view", "vmware", "VirtualBoxVM", "VBoxHeadless", "VBoxSVC", "qemu-system-x86_64",
+        "Docker Desktop", "com.docker.backend", "com.docker.build", "dockerd", "wfica32", "SelfService", "CitrixWorkspace",
+    };
+
+    // Audio apps and always-on agents are included here so every existing guard (SetPriority, suspend, enforce
+    // loop, Laptop Saver, WorkloadOptimizer) protects them without each needing its own check.
+    public static bool IsInteractive(string processName)
+    {
+        var name = StripExe(processName);
+        return InteractiveProcessNames.Contains(name) || AlwaysOnAgentNames.Contains(name) || IsAudioApp(processName);
+    }
+
+    private static string StripExe(string processName) =>
+        processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? processName[..^4] : processName;
+
+    // Windows and driver helpers that take part in power transitions, Wi-Fi, identity, display and thermal policy.
+    // They are idle by CPU almost always (the idle detector would pick them), and a priority rule written to the
+    // registry applies from the moment they start, including during sleep and wake. What prompted this was a run of
+    // hard freezes right after resume from Modern Standby, with the Wi-Fi extension and a power-source change in the
+    // log and permanent slow-down rules on several of these. It is not proven that the rules caused the freezes, but
+    // slowing these helpers gains nothing and puts the power path at risk, so the app never slows, trims or freezes
+    // them, by any route, with no override. Most are far below the optimizer's minimum size anyway; this is about
+    // the permanent rules and the manual actions.
+    public static readonly HashSet<string> PlatformHelperNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "wlanext", "dasHost", "WUDFCompanionHost", "NgcIso", "BioIso", "LsaIso", "SgrmBroker",
+        "amdpmfservice", "amdpmfserviceuser", "atieclxx", "atiesrxx",
+        "esif_uf", "igfxCUIService", "igfxEM", "igfxext", "igfxextN", "IntelCpHDCPSvc", "IntelCpHeciSvc", "jhi_service", "ibtsiva",
+    };
+
+    public static bool IsPlatformHelper(string processName) => PlatformHelperNames.Contains(StripExe(processName));
+
+    // The user's own "never touch" list (Settings), for corporate agents and anything else only they know about.
+    // Replaced as a whole, never edited in place, so a reader on another thread always sees a complete set.
+    private static volatile HashSet<string> _userNames = new(StringComparer.OrdinalIgnoreCase);
+
+    public const int MaxUserNames = 100;
+    public const int MaxUserNameLength = 64;
+
+    /// <summary>
+    /// Splits the Settings text into program names: separated by commas, semicolons or line breaks (names may
+    /// contain spaces, like "LM Studio"), ".exe" dropped, duplicates removed. Anything that cannot be a process
+    /// name (a path, wildcard, control character, or one over 64 characters) is skipped, and only the first 100 count.
+    /// </summary>
+    internal static List<string> ParseUserNames(string? text)
+    {
+        var names = new List<string>();
+        if (string.IsNullOrWhiteSpace(text)) return names;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in text.Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = StripExe(part.Trim());
+            if (name.Length is 0 or > MaxUserNameLength) continue;
+            if (name.Any(c => char.IsControl(c) || "\\/:*?\"<>|".Contains(c))) continue;
+            if (seen.Add(name)) names.Add(name);
+            if (names.Count >= MaxUserNames) break;
+        }
+        return names;
+    }
+
+    public static void SetUserNames(string? text) =>
+        _userNames = new HashSet<string>(ParseUserNames(text), StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsUserProtected(string processName) => _userNames.Contains(StripExe(processName));
+
+    /// <summary>
+    /// The message key explaining why the app will not slow down, trim or freeze this process, or null when it may.
+    /// One answer for every route (manual, background, persistent rule), so no route can disagree with another.
+    /// </summary>
+    public static string? NeverTouchMessageKey(string processName) =>
+        IsAiTool(processName) ? "Msg_ProcessAiTool"
+        : IsPlatformHelper(processName) ? "Msg_ProcessPlatform"
+        : IsUserProtected(processName) ? "Msg_ProcessUserProtected"
+        : null;
+
+    public static bool IsNeverTouch(string processName) => NeverTouchMessageKey(processName) is not null;
 
     // Local-AI stack: model hosts (LM Studio, Ollama, llama.cpp, ...) and the runtimes that agents are
     // written in. They look idle to the CPU-based detector while they wait on each other (an agent

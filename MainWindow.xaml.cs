@@ -71,7 +71,11 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         ApplySettings(settings);
-        PriorityPersistence.ClearInteractiveRules();
+        // Permanent slow-down rules that older versions left on programs the app now never slows (browsers, work
+        // agents, Windows/driver helpers) are removed, and the window says which, because nothing else shows them.
+        var clearedRules = PriorityPersistence.ClearUnsafeRules();
+        if (clearedRules.Count > 0)
+            Log(Loc.Instance.Format("Msg_RulesCleared", clearedRules.Count, string.Join(", ", clearedRules.Select(r => $"{r.Name} ({r.Was})"))));
         SetupTrayIcon();
 
         ProcessGrid.ItemsSource = _processes;
@@ -81,6 +85,7 @@ public partial class MainWindow : Window
         CleanupList.ItemsSource = _cleanupItems;
         InitChecks();
         InitSettingsTab();
+        InitCoolingTab();
         InitStartupTab();
 
         LanguageCombo.ItemsSource = Loc.Languages;
@@ -108,7 +113,12 @@ public partial class MainWindow : Window
         _refreshTimer.Start();
 
         // Idle while hidden in the tray with nothing to supervise; wake instantly when shown again.
-        IsVisibleChanged += (_, _) => ApplyRefreshPolicy();
+        // While hidden nothing is drawn (graphs, load bars), so what was missed is painted as the window comes back.
+        IsVisibleChanged += (_, _) =>
+        {
+            ApplyRefreshPolicy();
+            if (IsVisible) { RedrawGraphs(); PaintLoadPanel(); }
+        };
         AutoOptimizeCheck.Checked += (_, _) => ApplyRefreshPolicy();
         AutoOptimizeCheck.Unchecked += (_, _) => ApplyRefreshPolicy();
         LoadAlertCheck.Checked += (_, _) => ApplyRefreshPolicy();
@@ -152,18 +162,25 @@ public partial class MainWindow : Window
         _tickRunning = true;
         try
         {
-            // Enumerating every process and the battery WMI query are the slow parts; they run off the
-            // UI thread so the window never stutters during a refresh. Only the results are applied here.
-            // Disk and GPU load come from slow WMI queries, so they are only read while someone can see them
-            // (the Settings tab is open) or the load alert needs them.
-            var wantExtraLoad = SettingsTab.IsSelected || LoadAlertCheck.IsChecked == true || AutoOptimizeOnLoadCheck.IsChecked == true;
-            var (fresh, battery, extra) = await Task.Run(() =>
-                (_processMonitor.Refresh(), _battery.GetHealth(), wantExtraLoad ? _loadSampler.Sample() : (ExtraLoad?)null));
+            // Enumerating every process is the slow part; it runs off the UI thread so the window never
+            // stutters during a refresh. Only the results are applied here. Everything else is read only while
+            // someone can see it: the battery line lives on the Security tab and the thermal readout on the
+            // Settings tab, and disk/GPU load is needed by the Settings tab or by the load alert and optimizer.
+            var visible = IsVisible;
+            var wantExtraLoad = (visible && SettingsTab.IsSelected) || LoadAlertCheck.IsChecked == true || AutoOptimizeOnLoadCheck.IsChecked == true;
+            var wantBattery = visible && SecurityTab.IsSelected;
+            var wantThermal = visible && SettingsTab.IsSelected;
+            var (fresh, battery, extra, thermal) = await Task.Run(() =>
+                (_processMonitor.Refresh(),
+                 wantBattery ? _battery.GetHealth() : null,
+                 wantExtraLoad ? _loadSampler.Sample() : (ExtraLoad?)null,
+                 wantThermal ? _thermalSampler.Sample() : (ThermalReading?)null));
             if (_closed) return;
 
             ApplyProcesses(fresh);
             UpdateSystemStats();
-            ApplyBattery(battery);
+            if (battery is not null) ApplyBattery(battery);
+            if (thermal is { } reading) UpdateCoolingReadout(reading);
             if (extra is { } sampled) _extraLoad = sampled;
             UpdateLoadPanel();
             UpdateLoadPressure(); // once per refresh, so "several refreshes in a row" means that
@@ -200,8 +217,10 @@ public partial class MainWindow : Window
             LoadAlertCheck.IsChecked = s.LoadAlert;
             AutoOptimizeOnLoadCheck.IsChecked = s.AutoOptimizeOnLoad;
             LoadLimitSlider.Value = s.LoadLimitPercent;
+            NeverTouchBox.Text = s.NeverTouch;
         }
         finally { _loadingSettings = false; }
+        ProtectedItems.SetUserNames(s.NeverTouch); // in force from the very first tick
         // Before anything can act: from the first tick on, view-only mode must already be in force.
         ApplyViewOnlyState(viewOnly);
 
@@ -215,6 +234,12 @@ public partial class MainWindow : Window
         }
         AutoOptimizeThresholdBox.TextChanged += (_, _) => SaveSettings();
         LoadLimitSlider.ValueChanged += (_, _) => SaveSettings();
+        NeverTouchBox.TextChanged += (_, _) =>
+        {
+            if (_loadingSettings) return;
+            ProtectedItems.SetUserNames(NeverTouchBox.Text); // applies to the very next action, not after a restart
+            SaveSettings();
+        };
     }
 
     private void SaveSettings()
@@ -233,6 +258,7 @@ public partial class MainWindow : Window
             LoadAlert = LoadAlertCheck.IsChecked == true,
             AutoOptimizeOnLoad = AutoOptimizeOnLoadCheck.IsChecked == true,
             LoadLimitPercent = (int)Math.Round(LoadLimitSlider.Value),
+            NeverTouch = string.Join(", ", ProtectedItems.ParseUserNames(NeverTouchBox.Text)),
         }.Save();
     }
 
@@ -242,13 +268,20 @@ public partial class MainWindow : Window
     {
         var stats = _systemStats.Sample();
         _latestStats = stats;
-        CpuUsageText.Text = $"{stats.CpuPercent:F0}%";
-        MemoryUsageText.Text = $"{FormatGb(stats.UsedMemoryBytes)} / {FormatGb(stats.TotalMemoryBytes)} GB";
 
         var memPercent = stats.TotalMemoryBytes > 0 ? stats.UsedMemoryBytes * 100.0 / stats.TotalMemoryBytes : 0;
         AppendHistory(_cpuHistory, stats.CpuPercent);
         AppendHistory(_memHistory, memPercent);
 
+        // The history keeps growing while hidden (it is cheap), but nothing is drawn for a window nobody sees.
+        if (IsVisible) RedrawGraphs();
+    }
+
+    private void RedrawGraphs()
+    {
+        var stats = _latestStats;
+        CpuUsageText.Text = $"{stats.CpuPercent:F0}%";
+        MemoryUsageText.Text = $"{FormatGb(stats.UsedMemoryBytes)} / {FormatGb(stats.TotalMemoryBytes)} GB";
         DrawSparkline(CpuGraphCanvas, _cpuHistory);
         DrawSparkline(MemoryGraphCanvas, _memHistory);
     }
@@ -377,6 +410,8 @@ public partial class MainWindow : Window
             _closed = true;
             _checkCts?.Cancel();
             _refreshTimer.Stop();
+            _loadSampler.Dispose();
+            _thermalSampler.Dispose();
             ActionLog.Write($"=== Exiting. Releasing {_autoThrottled.Count} throttled and {_autoSuspended.Count} suspended process(es).");
             RestoreAutoThrottled();
             _trayIcon.Dispose();
@@ -657,9 +692,17 @@ public partial class MainWindow : Window
             if (!double.TryParse(AutoOptimizeThresholdBox.Text.Trim().Replace(',', '.'),
                     System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
                     out thresholdGb) || thresholdGb <= 0) thresholdGb = 2;
-            var thresholdBytes = (long)(thresholdGb * BytesPerGb);
-
             var stats = _systemStats.Sample();
+            // Never more than a third of the installed RAM: a fixed "2 GB" is half of a 4 GB laptop, where free memory
+            // would always be "below the threshold" and Auto-Optimize could never stand down (see RamPolicy).
+            var thresholdBytes = RamPolicy.EffectiveThresholdBytes((long)(thresholdGb * BytesPerGb), stats.TotalMemoryBytes);
+            if (thresholdBytes < (long)(thresholdGb * BytesPerGb) && _cappedThresholdLogged != thresholdGb)
+            {
+                _cappedThresholdLogged = thresholdGb;
+                Log(Loc.Instance.Format("Msg_ThresholdCapped", thresholdGb.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture),
+                    FormatGb(thresholdBytes), FormatGb(stats.TotalMemoryBytes)));
+            }
+            thresholdGb = (double)thresholdBytes / BytesPerGb;
             freeBytes = stats.TotalMemoryBytes - stats.UsedMemoryBytes;
             ramPressure = freeBytes < thresholdBytes;
             ramRecovered = freeBytes > thresholdBytes + HysteresisBytes;
@@ -687,7 +730,9 @@ public partial class MainWindow : Window
                 if (_autoThrottled.ContainsKey(entry.Pid)) continue;
                 if (!Enum.TryParse<ProcessPriorityClass>(entry.Priority, out var original)) continue;
 
-                ProcessMonitor.TrimMemory(entry.Pid, entry.Name);
+                // At most one trim per program per 10 minutes, so a trim that makes RAM look recovered cannot start a loop.
+                if (_workloadOptimizer.ClaimTrim(entry.Pid, DateTime.UtcNow))
+                    ProcessMonitor.TrimMemory(entry.Pid, entry.Name);
                 var result = ProcessMonitor.SetPriority(entry.Pid, entry.Name, ProcessPriorityClass.BelowNormal);
                 if (result.Ok)
                 {
@@ -749,6 +794,9 @@ public partial class MainWindow : Window
     // Edge-detects the free-RAM threshold so the action log records when pressure began and ended
     // without one line per tick.
     private bool _belowThreshold;
+
+    // The threshold value for which the "lowered for this PC's RAM" line was last written, so it appears once, not per tick.
+    private double _cappedThresholdLogged;
 
     private void RestoreAutoThrottled()
     {
@@ -836,7 +884,15 @@ public partial class MainWindow : Window
         var id = ++_startupLoadId;
         try
         {
-            var items = await Task.Run(() => _startupManager.GetAll());
+            // Copies that versions up to 1.2.x renamed to "*.disabled" make Windows ask which app should open them at
+            // every sign-in; repairing them is a file change, so it is skipped in view-only mode (and quick when idle).
+            var (items, repair) = await Task.Run(() =>
+            {
+                var repaired = StartupManager.RepairLegacyDisabled(); // first, so the list read next already shows the repaired entries
+                return (_startupManager.GetAll(), repaired);
+            });
+            // Logged even if a newer refresh has superseded this one: the files were changed either way.
+            if (repair.Total > 0) Log(Loc.Instance.Format("Msg_LegacyStartupFixed", repair.Total));
             if (id != _startupLoadId) return;
             NoteSelfReenabled(items);
             _startupItems.Clear();
@@ -1175,6 +1231,7 @@ public partial class MainWindow : Window
         RefreshStartup();
         RefreshServices();
         RefreshSecurity();
+        _ = RefreshCpuLimitAsync();
     }
 
     // ---------- Services ----------

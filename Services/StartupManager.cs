@@ -111,12 +111,12 @@ public class StartupManager
         return list;
     }
 
-    internal static List<StartupEntry> ReadFolder(string folder, StartupSource source, RegistryKey approvalHive)
+    internal static List<StartupEntry> ReadFolder(string folder, StartupSource source, RegistryKey approvalHive, string approvedPath = ApprovedFolderKeyPath)
     {
         var list = new List<StartupEntry>();
         if (!Directory.Exists(folder)) return list;
 
-        using var approvedKey = approvalHive.OpenSubKey(ApprovedFolderKeyPath, writable: false);
+        using var approvedKey = approvalHive.OpenSubKey(approvedPath, writable: false);
         foreach (var file in Directory.GetFiles(folder))
         {
             // desktop.ini and similar are hidden/system bookkeeping files, not startup items.
@@ -254,6 +254,115 @@ public class StartupManager
 
         entry.Enabled = enabled;
         return new ActionResult(true, enabled ? "Msg_StartupEnabled" : "Msg_StartupDisabled", entry.Name);
+    }
+
+    // ---------- Copies renamed to "*.disabled" by versions up to 1.2.x ----------
+
+    /// <summary>What <see cref="RepairLegacyDisabled"/> did: copies moved back and switched off, stale ones set aside, ones it could not fix.</summary>
+    internal readonly record struct LegacyRepair(int Repaired, int SetAside, int Failed)
+    {
+        public int Total => Repaired + SetAside;
+    }
+
+    // What the old versions could have disabled: files that run by themselves from a Startup folder.
+    private static readonly HashSet<string> LegacyStartupExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".lnk", ".url", ".cmd", ".bat", ".exe", ".vbs", ".js", ".ps1", ".appref-ms",
+    };
+
+    /// <summary>
+    /// Windows tries to open every file in a Startup folder at sign-in, so the "x.lnk.disabled" copies that versions
+    /// up to 1.2.x left behind make it ask "Which app do you want to use to open this .disabled file?" on every
+    /// start. Each one is switched off the way Task Manager does (the StartupApproved flag) and moved back to its
+    /// real name, so the entry stays exactly as off as the user left it and the question stops. Done once per
+    /// refresh, silently when there is nothing to do, and never in view-only mode (it changes files).
+    /// </summary>
+    internal static LegacyRepair RepairLegacyDisabled()
+    {
+        if (ViewOnlyMode.Enabled) return default;
+        var setAside = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BgOptimizer", "legacy-startup");
+        var user = RepairLegacyFolder(Environment.GetFolderPath(Environment.SpecialFolder.Startup), Hkcu, ApprovedFolderKeyPath,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), setAside);
+        var common = RepairLegacyFolder(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), Hklm, ApprovedFolderKeyPath,
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), setAside);
+        return new LegacyRepair(user.Repaired + common.Repaired, user.SetAside + common.SetAside, user.Failed + common.Failed);
+    }
+
+    /// <param name="requiredRoot">The folder must lie inside this one. The Startup folder's location is a per-user setting, so without
+    /// this a redirected one could make the elevated app rename files in a place only administrators can write.</param>
+    /// <param name="log">Where each file's outcome is recorded; the action log unless a test passes its own.</param>
+    internal static LegacyRepair RepairLegacyFolder(string folder, RegistryKey approvalHive, string approvedPath, string requiredRoot, string setAsideDir, Action<string>? log = null)
+    {
+        log ??= message => ActionLog.Write(message);
+        int repaired = 0, setAside = 0, failed = 0;
+        try
+        {
+            if (!IsPlainFolderUnder(folder, requiredRoot)) return default;
+            foreach (var file in Directory.GetFiles(folder))
+            {
+                if (!file.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase)) continue;
+                var realPath = file[..^".disabled".Length];
+                // Only what the old versions produced: a startup-type name, not hidden bookkeeping, not a link.
+                if (!LegacyStartupExtensions.Contains(Path.GetExtension(realPath))) continue;
+                if ((File.GetAttributes(file) & (FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint)) != 0) continue;
+
+                try
+                {
+                    if (File.Exists(realPath))
+                    {
+                        // A real copy exists already, so this one is a stale duplicate: set aside, never deleted or overwritten.
+                        if (SetAsideStale(file, setAsideDir)) { setAside++; log($"STARTUP_REPAIR_LEGACY file=\"{Path.GetFileName(file)}\" result=set-aside"); }
+                        else failed++;
+                        continue;
+                    }
+
+                    // Flag first, move second: if the flag cannot be written nothing has moved, and if the move then
+                    // fails the leftover flag only describes a file that is not there. The other order could briefly
+                    // turn an item the user switched off back on.
+                    using (var approvedKey = approvalHive.CreateSubKey(approvedPath, writable: true))
+                    {
+                        if (approvedKey == null) { failed++; continue; }
+                        approvedKey.SetValue(Path.GetFileName(realPath), StartupApprovedValue.Encode(false, DateTime.UtcNow), RegistryValueKind.Binary);
+                    }
+                    File.Move(file, realPath, overwrite: false);
+                    repaired++;
+                    log($"STARTUP_REPAIR_LEGACY file=\"{Path.GetFileName(file)}\" result=moved-back-and-kept-off");
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    log($"STARTUP_REPAIR_LEGACY file=\"{Path.GetFileName(file)}\" result=failed ({ex.GetType().Name})");
+                }
+            }
+        }
+        catch { failed++; /* an unreadable folder just means there is nothing to repair here */ }
+        return new LegacyRepair(repaired, setAside, failed);
+    }
+
+    private static bool SetAsideStale(string file, string setAsideDir)
+    {
+        var unique = Guid.NewGuid().ToString("N")[..8];
+        var target = Path.Combine(setAsideDir, $"{Path.GetFileName(file)}.{DateTime.UtcNow:yyyyMMddHHmmss}.{unique}");
+        // The data folder is the user's: never move into it through a junction or link.
+        if (!SafeAppData.IsSafeToWrite(target)) return false;
+        Directory.CreateDirectory(setAsideDir);
+        if (!SafeAppData.IsSafeToWrite(target)) return false;
+        File.Move(file, target, overwrite: false);
+        return true;
+    }
+
+    internal static bool IsPlainFolderUnder(string folder, string root)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(root)) return false;
+            var inside = Path.GetFullPath(folder).TrimEnd('\\') + "\\";
+            var outside = Path.GetFullPath(root).TrimEnd('\\') + "\\";
+            if (!inside.StartsWith(outside, StringComparison.OrdinalIgnoreCase)) return false;
+            var dir = new DirectoryInfo(folder);
+            return dir.Exists && (dir.Attributes & FileAttributes.ReparsePoint) == 0;
+        }
+        catch { return false; }
     }
 
     // Tasks under \Microsoft\... are Windows-internal plumbing (Office click-to-run,

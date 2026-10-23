@@ -28,6 +28,8 @@ internal sealed class AppSettings
     public int LoadLimitPercent { get; set; } = DefaultLoadLimit;
     /// <summary>Trim and slow idle background programs while a load stays above <see cref="LoadLimitPercent"/>; see <see cref="LoadPressure"/>.</summary>
     public bool AutoOptimizeOnLoad { get; set; }
+    /// <summary>Program names the app must never slow down, trim or freeze, comma-separated; see <see cref="ProtectedItems.ParseUserNames"/>.</summary>
+    public string NeverTouch { get; set; } = "";
 
     public const int MinLoadLimit = 50;
     public const int MaxLoadLimit = 100;
@@ -73,6 +75,8 @@ internal sealed class AppSettings
         if (!ViewOnlyLock.IsValid(s.ViewOnlyCodeHash)) s.ViewOnlyCodeHash = null;
         // A hand-edited limit outside the slider's range would put the limit marker off the bar.
         s.LoadLimitPercent = Math.Clamp(s.LoadLimitPercent, MinLoadLimit, MaxLoadLimit);
+        // Only usable names survive (no paths or wildcards, at most 100): a hand-edited file can add protection, never anything else.
+        s.NeverTouch = string.Join(", ", ProtectedItems.ParseUserNames(s.NeverTouch));
         return s;
     }
 }

@@ -405,7 +405,7 @@
             </TabItem>
 
             <!-- SECURITY TAB -->
-            <TabItem Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Security]}">
+            <TabItem x:Name="SecurityTab" Header="{Binding Source={x:Static loc:Loc.Instance}, Path=[Tab_Security]}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="12">
                     <TextBlock Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Sec_Firewall]}" FontWeight="SemiBold"/>
@@ -507,6 +507,31 @@
                                   Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadOptimize]}"/>
                         <TextBlock Margin="50,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
                                    Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_LoadOptimizeHint]}"/>
+
+                        <!-- Programs the app must never slow down, trim or freeze: the user's own protected list -->
+                        <TextBlock Margin="0,26,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_NeverTitle]}"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_NeverHint]}"/>
+                        <TextBox x:Name="NeverTouchBox" Margin="0,8,0,0" MaxLength="1000" VerticalContentAlignment="Center"
+                                 AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_NeverName]}"/>
+
+                        <!-- Cooling: what Windows reports about heat, and the one safe lever (a CPU speed cap) -->
+                        <TextBlock Margin="0,26,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CoolTitle]}"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"
+                                   Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CoolHint]}"/>
+                        <StackPanel Margin="0,8,0,0" AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CoolTitle]}">
+                            <TextBlock x:Name="CoolTempText"/>
+                            <TextBlock x:Name="CoolSpeedText"/>
+                            <TextBlock x:Name="CoolStatusText" Margin="0,2,0,0" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <WrapPanel Margin="0,12,0,0">
+                            <TextBlock VerticalAlignment="Center" Margin="0,0,6,0" Text="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CoolLimit]}"/>
+                            <ComboBox x:Name="CpuLimitCombo" Width="120"
+                                      AutomationProperties.Name="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CoolLimit]}"/>
+                            <Button x:Name="CpuLimitApplyButton" Style="{StaticResource BtnPrimary}" Click="CpuLimitApply_Click"
+                                    Content="{Binding Source={x:Static loc:Loc.Instance}, Path=[Set_CoolApply]}"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="CpuLimitStatusText" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextFaintBrush}"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

@@ -69,11 +69,31 @@ internal class WorkloadOptimizer
         // Drop bookkeeping for PIDs that exited.
         foreach (var pid in _idleStreaks.Keys.Where(pid => !seen.Contains(pid)).ToList())
             _idleStreaks.Remove(pid);
+        foreach (var pid in _lastTrim.Keys.Where(pid => !seen.Contains(pid)).ToList())
+            _lastTrim.Remove(pid);
+    }
+
+    /// <summary>
+    /// A trimmed program faults its pages straight back in, and Auto-Optimize releases everything when free RAM
+    /// recovers (a trim itself makes it look recovered, since trimmed pages count as available). Without a pause
+    /// that loops: trim, "recovered", release, pages come back, pressure, trim again. Each loop costs CPU and disk
+    /// on exactly the small-RAM laptops that trigger it, so a program is trimmed at most once per this long.
+    /// </summary>
+    public static readonly TimeSpan TrimCooldown = TimeSpan.FromMinutes(10);
+
+    private readonly Dictionary<int, DateTime> _lastTrim = new();
+
+    /// <summary>True, and the trim is recorded, unless this process was already trimmed within <see cref="TrimCooldown"/>.</summary>
+    public bool ClaimTrim(int pid, DateTime nowUtc)
+    {
+        if (_lastTrim.TryGetValue(pid, out var last) && nowUtc - last < TrimCooldown) return false;
+        _lastTrim[pid] = nowUtc;
+        return true;
     }
 
     private static bool IsEligible(ProcessEntry p, IReadOnlySet<int> foreground) =>
         !p.IsProtected && !ProtectedItems.IsInteractive(p.Name) && !ProtectedItems.IsSecurityTool(p.Name)
-        && !ProtectedItems.IsAiTool(p.Name) && !foreground.Contains(p.Pid);
+        && !ProtectedItems.IsNeverTouch(p.Name) && !foreground.Contains(p.Pid);
 
     public List<ProcessEntry> GetIdleCandidates(IReadOnlyList<ProcessEntry> processes, IReadOnlySet<int> foreground, long minMemoryBytes = DefaultMinMemoryBytes) =>
         processes.Where(p => IsEligible(p, foreground)

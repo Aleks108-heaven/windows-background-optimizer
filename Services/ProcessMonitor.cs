@@ -173,8 +173,8 @@ public class ProcessMonitor
         if (ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
-        if (ProtectedItems.IsAiTool(name))
-            return new ActionResult(false, "Msg_ProcessAiTool", name);
+        if (ProtectedItems.NeverTouchMessageKey(name) is { } neverTouch)
+            return new ActionResult(false, neverTouch, name);
         try
         {
             using var proc = Process.GetProcessById(pid);
@@ -199,9 +199,11 @@ public class ProcessMonitor
         // Security/system-critical processes are never throttleable, regardless of the caller's intent.
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
-        // Local-AI tools can't be slowed down even with the interactive override ticked.
-        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsAiTool(name))
-            return new ActionResult(false, "Msg_ProcessAiTool", name);
+        // Local-AI tools, Windows/driver helpers and anything on the user's own list can't be slowed down, even
+        // with the interactive override ticked.
+        if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
+            && ProtectedItems.NeverTouchMessageKey(name) is { } neverTouch)
+            return new ActionResult(false, neverTouch, name);
         if (!allowInteractiveThrottle && priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal && ProtectedItems.IsInteractive(name))
             return new ActionResult(false, "Msg_ProcessInteractive", name);
         try
@@ -236,8 +238,8 @@ public class ProcessMonitor
         if (ViewOnlyMode.Block(name) is { } viewOnly) return viewOnly;
         if (ProtectedItems.IsProcessProtected(name))
             return new ActionResult(false, "Msg_ProcessProtectedModify", name);
-        if (ProtectedItems.IsAiTool(name))
-            return new ActionResult(false, "Msg_ProcessAiTool", name);
+        if (ProtectedItems.NeverTouchMessageKey(name) is { } neverTouch)
+            return new ActionResult(false, neverTouch, name);
         if (ProtectedItems.IsInteractive(name) || ProtectedItems.IsSecurityTool(name))
             return new ActionResult(false, "Msg_ProcessInteractive", name);
         try

@@ -40,8 +40,8 @@ internal static class PriorityPersistence
             return new ActionResult(false, "Msg_ProcessProtectedModify", processName);
 
         if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
-            && ProtectedItems.IsAiTool(processName))
-            return new ActionResult(false, "Msg_ProcessAiTool", processName);
+            && ProtectedItems.NeverTouchMessageKey(processName) is { } neverTouch)
+            return new ActionResult(false, neverTouch, processName);
 
         if (priority is ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal
             && ProtectedItems.IsInteractive(processName))
@@ -80,24 +80,60 @@ internal static class PriorityPersistence
         }
     }
 
-    /// <summary>Removes any leftover persistent low-priority rule on interactive apps (needs admin).</summary>
-    public static void ClearInteractiveRules()
+    /// <summary>The CpuPriorityClass values that slow a program down (Idle and Below normal); Normal and above are left alone.</summary>
+    internal static bool IsLowRule(int value) => value is 1 or 5;
+
+    /// <summary>
+    /// Programs whose leftover slow-down rules are removed at start: interactive apps (as before), work agents and
+    /// Windows/driver helpers. Not included: audio apps, local-AI tools and the user's own list. The app never
+    /// wrote rules for those since it refused them, so one that exists may be somebody's deliberate choice.
+    /// </summary>
+    internal static IEnumerable<string> UnsafeRuleNames() =>
+        ProtectedItems.InteractiveProcessNames
+            .Concat(ProtectedItems.AlwaysOnAgentNames)
+            .Concat(ProtectedItems.PlatformHelperNames)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Removes leftover permanent slow-down rules (Idle or Below normal) on programs that must not be slowed,
+    /// which older versions can leave behind: they apply from the moment the program starts, including during
+    /// sleep and wake, and nothing in the window shows them. A Normal-or-higher rule is the user's choice and is
+    /// kept. Each removal is written to the action log with the value it had. Needs administrator rights, and
+    /// does nothing in view-only mode.
+    /// </summary>
+    /// <returns>The rules removed, with the priority each one set.</returns>
+    public static IReadOnlyList<(string Name, string Was)> ClearUnsafeRules() =>
+        ClearUnsafeRules(UnsafeRuleNames(), ReadPersisted, ClearPersistent, message => ActionLog.Write(message));
+
+    /// <summary>The store and the log are passed in so the logic is tested without touching the real registry or action log.</summary>
+    internal static IReadOnlyList<(string Name, string Was)> ClearUnsafeRules(
+        IEnumerable<string> names, Func<string, int?> read, Func<string, ActionResult> clear, Action<string> log)
     {
-        foreach (var name in ProtectedItems.InteractiveProcessNames)
-            if (IsPersisted(name)) ClearPersistent(name);
+        var cleared = new List<(string, string)>();
+        foreach (var name in names)
+        {
+            if (read(name) is not { } value || !IsLowRule(value)) continue;
+            if (!clear(name).Ok) continue; // refused (view-only mode) or not allowed to write: nothing was removed, so nothing is claimed
+            var was = value == 1 ? nameof(ProcessPriorityClass.Idle) : nameof(ProcessPriorityClass.BelowNormal);
+            log($"IFEO_CLEAR name=\"{name}\" was={was} (a program the app never slows down)");
+            cleared.Add((name, was));
+        }
+        return cleared;
     }
 
-    public static bool IsPersisted(string processName)
+    public static bool IsPersisted(string processName) => ReadPersisted(processName) != null;
+
+    internal static int? ReadPersisted(string processName)
     {
         try
         {
             var exe = ExeName(processName);
             using var perfKey = Registry.LocalMachine.OpenSubKey($@"{IfeoBase}\{exe}\PerfOptions", writable: false);
-            return perfKey?.GetValue("CpuPriorityClass") != null;
+            return perfKey?.GetValue("CpuPriorityClass") is int value ? value : null;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 }
