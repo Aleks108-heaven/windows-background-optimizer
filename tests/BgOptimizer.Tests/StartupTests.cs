@@ -241,6 +241,7 @@ public class StartupManagerTests : IDisposable
     }
 }
 
+[Collection("ViewOnly")] // sets the app-wide language to English, and must not run beside the tests that switch it
 public class StartupDetailsTests
 {
     private static StartupEntry Entry(Action<StartupEntry>? tweak = null)
@@ -298,6 +299,7 @@ public class StartupDetailsTests
 }
 
 /// <summary>The new Startup-tab strings exist in every language, with the same placeholders as English.</summary>
+[Collection("ViewOnly")] // switches the app-wide language
 public class StartupLocalizationTests
 {
     private static Dictionary<string, Dictionary<string, string>> Table() =>

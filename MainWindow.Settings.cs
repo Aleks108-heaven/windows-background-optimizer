@@ -373,10 +373,10 @@ public partial class MainWindow
     private void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, MainTabs)) return;
-        // Fresh numbers as soon as the tab opens, rather than after the next 5 s tick: disk/GPU load and the thermal
-        // readout (Settings), the battery line (Security). Those are only read while their tab is showing.
-        if ((SettingsTab.IsSelected || SecurityTab.IsSelected) && _refreshTimer.IsEnabled) _ = TickAsync();
-        // The power plan can be changed elsewhere, so the speed limit shown is read again whenever the tab opens.
-        if (SettingsTab.IsSelected) _ = RefreshCpuLimitAsync();
+        // Fresh numbers as soon as the tab opens, rather than after the next 5 s tick: disk/GPU load (Settings), the
+        // battery line (Security), the thermal readout (Power & Cooling). Those are only read while their tab is showing.
+        if ((SettingsTab.IsSelected || SecurityTab.IsSelected || PowerTab.IsSelected) && _refreshTimer.IsEnabled) _ = TickAsync();
+        // The power plan can be changed elsewhere (Windows settings, MyASUS), so what is shown is read again whenever the tab opens.
+        if (PowerTab.IsSelected) { _ = RefreshCpuLimitAsync(); _ = RefreshPowerAsync(); }
     }
 }

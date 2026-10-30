@@ -26,6 +26,14 @@ internal static class DriverStoreCleaner
         && copy.Package.Date is not null
         && IsPublishedName(copy.Package.PublishedName);
 
+    /// <summary>How many of these are Windows' own older copies, which "Remove" never takes (shown so the list does not look like it ignored them).</summary>
+    public static int CountBuiltIn(IEnumerable<DriverCopy> copies) =>
+        copies.Count(c => c.Status == DriverCopyStatus.OlderUnusedBuiltIn);
+
+    /// <summary>The message for "nothing here can be removed": built-in copies get their own explanation instead of a rule they already meet.</summary>
+    public static string NothingToRemoveKey(IEnumerable<DriverCopy> considered) =>
+        CountBuiltIn(considered) > 0 ? "Ck_DrvOnlyBuiltIn" : "Ck_DrvNoneDeletable";
+
     /// <summary>Strictly "oemNN.inf": the name is the only thing that reaches pnputil's command line.</summary>
     internal static bool IsPublishedName(string? name) => name is not null && PublishedInf.IsMatch(name);
 

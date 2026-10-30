@@ -5,6 +5,7 @@ using Xunit;
 namespace BgOptimizer.Tests;
 
 /// <summary>Cleanup deletes files, so these pin down what it must leave alone as much as what it removes.</summary>
+[Collection("ViewOnly")] // one test here switches the app-wide language, which would flip the English that tests running beside it expect
 public class CleanupTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"bgopt-clean-{Guid.NewGuid():N}", "target");

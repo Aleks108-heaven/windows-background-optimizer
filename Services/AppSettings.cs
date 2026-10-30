@@ -30,6 +30,10 @@ internal sealed class AppSettings
     public bool AutoOptimizeOnLoad { get; set; }
     /// <summary>Program names the app must never slow down, trim or freeze, comma-separated; see <see cref="ProtectedItems.ParseUserNames"/>.</summary>
     public string NeverTouch { get; set; } = "";
+    /// <summary>The close button hides the window to the tray instead of quitting; see <see cref="CloseBehavior"/>. On unless turned off.</summary>
+    public bool KeepRunningInTray { get; set; } = true;
+    /// <summary>The one-time "still running in the tray" balloon has been shown.</summary>
+    public bool TrayHintShown { get; set; }
 
     public const int MinLoadLimit = 50;
     public const int MaxLoadLimit = 100;

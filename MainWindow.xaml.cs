@@ -85,7 +85,9 @@ public partial class MainWindow : Window
         CleanupList.ItemsSource = _cleanupItems;
         InitChecks();
         InitSettingsTab();
+        InitProtectedUi();
         InitCoolingTab();
+        InitPowerTab();
         InitStartupTab();
 
         LanguageCombo.ItemsSource = Loc.Languages;
@@ -165,11 +167,11 @@ public partial class MainWindow : Window
             // Enumerating every process is the slow part; it runs off the UI thread so the window never
             // stutters during a refresh. Only the results are applied here. Everything else is read only while
             // someone can see it: the battery line lives on the Security tab and the thermal readout on the
-            // Settings tab, and disk/GPU load is needed by the Settings tab or by the load alert and optimizer.
+            // Power & Cooling tab, and disk/GPU load is needed by the Settings tab or by the load alert and optimizer.
             var visible = IsVisible;
             var wantExtraLoad = (visible && SettingsTab.IsSelected) || LoadAlertCheck.IsChecked == true || AutoOptimizeOnLoadCheck.IsChecked == true;
             var wantBattery = visible && SecurityTab.IsSelected;
-            var wantThermal = visible && SettingsTab.IsSelected;
+            var wantThermal = visible && PowerTab.IsSelected;
             var (fresh, battery, extra, thermal) = await Task.Run(() =>
                 (_processMonitor.Refresh(),
                  wantBattery ? _battery.GetHealth() : null,
@@ -218,6 +220,8 @@ public partial class MainWindow : Window
             AutoOptimizeOnLoadCheck.IsChecked = s.AutoOptimizeOnLoad;
             LoadLimitSlider.Value = s.LoadLimitPercent;
             NeverTouchBox.Text = s.NeverTouch;
+            KeepInTrayCheck.IsChecked = s.KeepRunningInTray;
+            _trayHintShown = s.TrayHintShown;
         }
         finally { _loadingSettings = false; }
         ProtectedItems.SetUserNames(s.NeverTouch); // in force from the very first tick
@@ -227,7 +231,7 @@ public partial class MainWindow : Window
         // Saved on every change rather than on exit, so a crash or kill can't lose a choice. Unchecking
         // AllowSuspend in code (declined consent dialog) raises Unchecked too, so that is saved as well.
         // View-only mode is not in this list: it saves itself once the change is confirmed (it may ask for a code first).
-        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, LoadAlertCheck, AutoOptimizeOnLoadCheck })
+        foreach (var box in new[] { AutoOptimizeCheck, AllowSuspendCheck, AutoRestorePointCheck, PersistPriorityCheck, LoadAlertCheck, AutoOptimizeOnLoadCheck, KeepInTrayCheck })
         {
             box.Checked += (_, _) => SaveSettings();
             box.Unchecked += (_, _) => SaveSettings();
@@ -259,6 +263,8 @@ public partial class MainWindow : Window
             AutoOptimizeOnLoad = AutoOptimizeOnLoadCheck.IsChecked == true,
             LoadLimitPercent = (int)Math.Round(LoadLimitSlider.Value),
             NeverTouch = string.Join(", ", ProtectedItems.ParseUserNames(NeverTouchBox.Text)),
+            KeepRunningInTray = KeepInTrayCheck.IsChecked == true,
+            TrayHintShown = _trayHintShown,
         }.Save();
     }
 
@@ -372,9 +378,13 @@ public partial class MainWindow : Window
         var exitItem = new System.Windows.Forms.ToolStripMenuItem(Loc.Instance["Tray_Exit"]);
         exitItem.Click += (_, _) =>
         {
+            _exiting = true; // Shutdown closes the window, and that close must go through (see OnClosing)
             _trayIcon!.Visible = false;
             Application.Current.Shutdown();
         };
+
+        // Signing out, shutting down, or an installer asking the app to close: the window must really close then.
+        Application.Current.SessionEnding += (_, _) => _sessionEnding = true;
 
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add(openItem);
@@ -423,6 +433,35 @@ public partial class MainWindow : Window
         Show();
         WindowState = WindowState.Normal;
         Activate();
+    }
+
+    private bool _exiting;
+    private bool _sessionEnding;
+    private bool _trayHintShown;
+
+    // The close button hides the window and the app keeps running (load alert, Auto-Optimize); only the tray menu's
+    // Exit, a sign-out/shutdown or an installer's close request really close it. Switch it off in Settings to make
+    // the close button quit.
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (CloseBehavior.ShouldHide(KeepInTrayCheck.IsChecked == true, _exiting, _sessionEnding))
+        {
+            e.Cancel = true;
+            Hide();
+            ActionLog.Write("Window closed to the tray; the app keeps running (tray icon -> Exit quits it).");
+            ShowTrayHintOnce();
+            return;
+        }
+        base.OnClosing(e);
+    }
+
+    // Without one line of explanation a vanished window looks like a quit; shown once, then remembered.
+    private void ShowTrayHintOnce()
+    {
+        if (_trayHintShown) return;
+        _trayHintShown = true;
+        SaveSettings();
+        _trayIcon?.ShowBalloonTip(6000, Loc.Instance["AppTitle"], Loc.Instance["Msg_TrayStillRunning"], System.Windows.Forms.ToolTipIcon.Info);
     }
 
     private static System.Drawing.Icon CreateTrayIcon()
@@ -538,7 +577,7 @@ public partial class MainWindow : Window
         var targets = new List<ProcessEntry>();
         foreach (var entry in selected)
         {
-            if (entry.IsProtected) Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name));
+            if (entry.IsProtected) LogBlocked(entry);
             else targets.Add(entry);
         }
         if (targets.Count == 0) return;
@@ -551,6 +590,27 @@ public partial class MainWindow : Window
         foreach (var entry in targets)
             Log(ProcessMonitor.Kill(entry.Pid, entry.Name));
 
+        RefreshProcesses();
+    }
+
+    // "explorer" is protected like the other shell pieces, but it is the one people do want to do something about (it
+    // grows over days of use), so the refusal says what to use instead of only that it is protected.
+    private void LogBlocked(ProcessEntry entry) =>
+        Log(Loc.Instance.Format(string.Equals(entry.Name, "explorer", StringComparison.OrdinalIgnoreCase) ? "Msg_BlockedExplorer" : "Msg_BlockedProcess", entry.Name));
+
+    // Restarting the shell is the real fix for an Explorer that has grown; it closes the open File Explorer windows
+    // and interrupts any copy running in them, so it asks first. Windows starts the new shell itself (see ExplorerRestarter).
+    private async void RestartExplorer_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewOnlyBlocks()) return;
+        if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_ExplorerTitle"], Loc.Instance["Dlg_ExplorerMessage"], null,
+                danger: false, Loc.Instance["Dlg_Confirm"], Loc.Instance["Dlg_Cancel"]))
+            return;
+
+        if (!BeginBusy()) return;
+        try { Log(await Task.Run(ExplorerRestarter.Restart)); }
+        catch (Exception ex) { Log(ex.Message); }
+        finally { EndBusy(); }
         RefreshProcesses();
     }
 
@@ -567,7 +627,7 @@ public partial class MainWindow : Window
         double freed = 0;
         foreach (var entry in entries)
         {
-            if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); continue; }
+            if (entry.IsProtected) { LogBlocked(entry); continue; }
             var before = entry.MemoryBytes;
             var result = ProcessMonitor.TrimMemory(entry.Pid, entry.Name);
             if (result.Ok) { ok++; freed += double.Parse(result.Args[2].ToString()!, System.Globalization.CultureInfo.CurrentCulture); }
@@ -627,7 +687,7 @@ public partial class MainWindow : Window
         var allowInteractive = AllowInteractiveThrottleCheck.IsChecked == true;
         foreach (var entry in selected)
         {
-            if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); continue; }
+            if (entry.IsProtected) { LogBlocked(entry); continue; }
 
             Log(ProcessMonitor.SetPriority(entry.Pid, entry.Name, priority, allowInteractive));
 
@@ -861,7 +921,7 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.Tag is not ProcessEntry entry) return;
         if (ViewOnlyBlocks()) return;
-        if (entry.IsProtected) { Log(Loc.Instance.Format("Msg_BlockedProcess", entry.Name)); return; }
+        if (entry.IsProtected) { LogBlocked(entry); return; }
 
         var items = new List<string> { $"{entry.Name}  —  PID {entry.Pid}, {entry.MemoryDisplay}" };
         if (!ConfirmDialog.Show(this, Loc.Instance["Dlg_KillTitle"], Loc.Instance["Dlg_KillMessage"], items,
@@ -1123,25 +1183,38 @@ public partial class MainWindow : Window
     private void BuildTweaks()
     {
         TweakList.Children.Clear();
-        foreach (var tweak in TweakManager.Tweaks)
+        var first = true;
+        foreach (var (group, ids) in TweakManager.Groups)
         {
-            var text = new System.Windows.Controls.StackPanel();
-            text.Children.Add(new System.Windows.Controls.TextBlock { Text = Loc.Instance["Tw_" + tweak.Id], FontWeight = FontWeights.SemiBold });
-            text.Children.Add(new System.Windows.Controls.TextBlock
+            // Grouped by what they are for, so a long list is scanned by heading instead of read top to bottom.
+            TweakList.Children.Add(new System.Windows.Controls.TextBlock
             {
-                Text = Loc.Instance["Tw_" + tweak.Id + "_d"] + (tweak.NeedsAdmin ? "  " + Loc.Instance["Tw_Admin"] : ""),
-                Foreground = (System.Windows.Media.Brush)FindResource("TextFaintBrush"),
-                TextWrapping = TextWrapping.Wrap,
+                Text = Loc.Instance["Tw_Group_" + group], FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, first ? 0 : 14, 0, 8),
             });
-            var box = new System.Windows.Controls.CheckBox
-            {
-                Content = text, Tag = tweak, IsChecked = _tweaks.IsApplied(tweak), Margin = new Thickness(0, 0, 0, 10),
-                Style = (Style)FindResource("ToggleSwitch"),
-                VerticalContentAlignment = VerticalAlignment.Top, // the switch sits level with the first line of a multi-line description
-            };
-            box.Click += Tweak_Click;
-            TweakList.Children.Add(box);
+            first = false;
+            foreach (var id in ids) TweakList.Children.Add(BuildTweakBox(TweakManager.Get(id)));
         }
+    }
+
+    private System.Windows.Controls.CheckBox BuildTweakBox(TweakManager.Tweak tweak)
+    {
+        var text = new System.Windows.Controls.StackPanel();
+        text.Children.Add(new System.Windows.Controls.TextBlock { Text = Loc.Instance["Tw_" + tweak.Id], FontWeight = FontWeights.SemiBold });
+        text.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = Loc.Instance["Tw_" + tweak.Id + "_d"] + (tweak.NeedsAdmin ? "  " + Loc.Instance["Tw_Admin"] : ""),
+            Foreground = (System.Windows.Media.Brush)FindResource("TextFaintBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        var box = new System.Windows.Controls.CheckBox
+        {
+            Content = text, Tag = tweak, IsChecked = _tweaks.IsApplied(tweak), Margin = new Thickness(0, 0, 0, 10),
+            Style = (Style)FindResource("ToggleSwitch"),
+            VerticalContentAlignment = VerticalAlignment.Top, // the switch sits level with the first line of a multi-line description
+        };
+        box.Click += Tweak_Click;
+        return box;
     }
 
     private void Tweak_Click(object sender, RoutedEventArgs e)
@@ -1232,6 +1305,7 @@ public partial class MainWindow : Window
         RefreshServices();
         RefreshSecurity();
         _ = RefreshCpuLimitAsync();
+        _ = RefreshPowerAsync();
     }
 
     // ---------- Services ----------

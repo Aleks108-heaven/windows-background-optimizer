@@ -160,7 +160,8 @@ public class ProcessMonitor
         }
     }
 
-    [System.Runtime.InteropServices.DllImport("psapi.dll", SetLastError = true)]
+    [System.Runtime.InteropServices.DllImport("psapi.dll", SetLastError = true),
+     System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     private static extern bool EmptyWorkingSet(IntPtr hProcess);
 
     /// <summary>
@@ -219,10 +220,12 @@ public class ProcessMonitor
         }
     }
 
-    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    [System.Runtime.InteropServices.DllImport("ntdll.dll"),
+     System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     private static extern int NtSuspendProcess(IntPtr processHandle);
 
-    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    [System.Runtime.InteropServices.DllImport("ntdll.dll"),
+     System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     private static extern int NtResumeProcess(IntPtr processHandle);
 
     /// <summary>

@@ -11,7 +11,7 @@
     <AssemblyName>BgOptimizer</AssemblyName>
     <RootNamespace>BgOptimizer</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Product>Background Optimizer</Product>
     <Company>Aleks108-heaven</Company>
     <!-- Needed so a plain "dotnet restore" (no -r flag) still fetches the win-x64
@@ -30,6 +30,8 @@
     <Compile Remove="tests\**" />
     <EmbeddedResource Remove="tests\**" />
     <None Remove="tests\**" />
+    <!-- Copies of the app's .xaml files in the test output (the tests parse them) must not be compiled into the app a second time. -->
+    <Page Remove="tests\**" />
     <InternalsVisibleTo Include="BgOptimizer.Tests" />
   </ItemGroup>
 

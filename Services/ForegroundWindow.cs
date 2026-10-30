@@ -11,13 +11,13 @@ internal static class ForegroundWindow
 {
     private delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern IntPtr GetForegroundWindow();
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
 

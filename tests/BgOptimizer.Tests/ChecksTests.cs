@@ -428,6 +428,7 @@ public class DriverStoreScannerTests
 }
 
 /// <summary>Every new string exists in every language, with the same placeholders as English.</summary>
+[Collection("ViewOnly")] // one test here switches the app-wide language
 public class ChecksLocalizationTests
 {
     private static Dictionary<string, Dictionary<string, string>> Table() =>

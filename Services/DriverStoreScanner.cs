@@ -6,7 +6,8 @@ using System.Text.RegularExpressions;
 
 namespace BgOptimizer.Services;
 
-internal enum DriverCopyStatus { NewestInUse, OlderInUse, NewestUnused, OlderUnused }
+/// <summary>OlderUnusedBuiltIn: an older copy no device uses that has no oemNN.inf name, i.e. one of Windows' own drivers, which nothing here can remove.</summary>
+internal enum DriverCopyStatus { NewestInUse, OlderInUse, NewestUnused, OlderUnused, OlderUnusedBuiltIn }
 
 /// <param name="InfName">The package's original INF name (e.g. "netwtw10.inf"); two packages with the same one are copies of one driver.</param>
 /// <param name="PublishedName">Name Windows gave it in the driver store (oem12.inf); null for inbox drivers.</param>
@@ -134,7 +135,9 @@ internal static class DriverStoreScanner
                     (true, true) => DriverCopyStatus.NewestInUse,
                     (false, true) => DriverCopyStatus.OlderInUse,
                     (true, false) => DriverCopyStatus.NewestUnused,
-                    _ => DriverCopyStatus.OlderUnused,
+                    // No oemNN.inf name means a driver that ships with Windows (its INF sits in C:\Windows\INF under its own
+                    // name). pnputil only deletes published oemNN.inf packages, so it is told apart here, not at "Remove".
+                    _ => p.PublishedName is null ? DriverCopyStatus.OlderUnusedBuiltIn : DriverCopyStatus.OlderUnused,
                 }));
             }
         }

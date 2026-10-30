@@ -43,6 +43,59 @@ public class TweakManager
             User($@"{CV}\GameDVR", "AppCaptureEnabled", 0, 1)),
         new("StartupDelay", false,
             User($@"{CV}\Explorer\Serialize", "StartupDelayInMSec", 0, null)),
+
+        // Privacy and security, from the same families of settings WinHance groups under Privacy & Security.
+        new("Feedback", true,
+            new RegValue(RegistryHive.LocalMachine, @"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "DoNotShowFeedbackNotifications", 1, null)),
+        new("ErrorReporting", true,
+            new RegValue(RegistryHive.LocalMachine, @"SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting", "Disabled", 1, null)),
+        new("StartTracking", false,
+            User($@"{CV}\Explorer\Advanced", "Start_TrackProgs", 0, 1)),
+        new("SuggestedApps", false,
+            User($@"{CV}\ContentDeliveryManager", "SilentInstalledAppsEnabled", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "PreInstalledAppsEnabled", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "OemPreInstalledAppsEnabled", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "ContentDeliveryAllowed", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "FeatureManagementEnabled", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "SoftLandingEnabled", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "SubscribedContentEnabled", 0, 1)),
+        new("SettingsNags", false,
+            User($@"{CV}\ContentDeliveryManager", "SubscribedContent-338393Enabled", 0, 1),
+            User($@"{CV}\ContentDeliveryManager", "SubscribedContent-310093Enabled", 0, 1),
+            User($@"{CV}\UserProfileEngagement", "ScoobeSystemSettingEnabled", 0, 1)),
+        new("SearchHistory", false,
+            User($@"{CV}\SearchSettings", "IsDeviceSearchHistoryEnabled", 0, 1),
+            User($@"{CV}\SearchSettings", "IsDynamicSearchBoxEnabled", 0, 1),
+            User($@"{CV}\SearchSettings", "IsMSACloudSearchEnabled", 0, 1),
+            User($@"{CV}\SearchSettings", "IsAADCloudSearchEnabled", 0, 1)),
+        // Mode 0 is "HTTP only": updates still download from Microsoft, but this PC no longer uploads them to other PCs.
+        new("DeliveryOpt", true,
+            new RegValue(RegistryHive.LocalMachine, @"SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization", "DODownloadMode", 0, null)),
+
+        // Explorer.
+        new("ShowExtensions", false,
+            User($@"{CV}\Explorer\Advanced", "HideFileExt", 0, 1)),
+        new("QuickAccess", false,
+            User($@"{CV}\Explorer", "ShowRecent", 0, 1),
+            User($@"{CV}\Explorer", "ShowFrequent", 0, 1),
+            User($@"{CV}\Explorer", "ShowCloudFilesInQuickAccess", 0, 1),
+            User($@"{CV}\Explorer", "ShowRecommendations", 0, 1)),
+        new("SyncAds", false,
+            User($@"{CV}\Explorer\Advanced", "ShowSyncProviderNotifications", 0, 1)),
+
+        // Security: stops this PC accepting Windows Remote Assistance invitations (Quick Assist and other tools are separate).
+        new("RemoteAssist", true,
+            new RegValue(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Remote Assistance", "fAllowToGetHelp", 0, 1)),
+    };
+
+    /// <summary>The headings the Tweaks tab shows (Tw_Group_{name}) and which tweak sits under which, in order. Every tweak is in exactly one.</summary>
+    public static readonly IReadOnlyList<(string Group, string[] Ids)> Groups = new (string, string[])[]
+    {
+        ("Privacy", new[] { "Telemetry", "AdId", "Feedback", "ErrorReporting", "StartTracking" }),
+        ("Suggestions", new[] { "Suggestions", "SuggestedApps", "SettingsNags", "WebSearch", "SearchHistory" }),
+        ("Background", new[] { "BackgroundApps", "GameDvr", "StartupDelay", "DeliveryOpt" }),
+        ("Explorer", new[] { "ShowExtensions", "QuickAccess", "SyncAds" }),
+        ("Security", new[] { "RemoteAssist" }),
     };
 
     public static Tweak Get(string id) => Tweaks.First(t => t.Id == id);

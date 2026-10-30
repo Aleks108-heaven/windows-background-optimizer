@@ -128,6 +128,42 @@ internal static class ProtectedItems
         return names;
     }
 
+    /// <summary>
+    /// Everything that is protected without anyone adding it, group by group, so Settings can show it: an empty "never
+    /// touch" box would otherwise look as if nothing were protected. Each group is a translation key for its title and
+    /// its names; a rule that matches part of a name (anything containing "audio") is shown as *audio*.
+    /// </summary>
+    internal static IReadOnlyList<(string TitleKey, IReadOnlyList<string> Names)> BuiltInGroups()
+    {
+        static IReadOnlyList<string> Sorted(IEnumerable<string> names) =>
+            names.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return new (string, IReadOnlyList<string>)[]
+        {
+            ("Set_Built_Core", Sorted(ProtectedProcessNames)),
+            ("Set_Built_Agents", Sorted(AlwaysOnAgentNames)),
+            ("Set_Built_Platform", Sorted(PlatformHelperNames)),
+            ("Set_Built_Security", Sorted(SecurityToolProcessNames)),
+            ("Set_Built_Audio", Sorted(AudioProcessNames.Concat(AudioNameFragments.Select(f => $"*{f}*")))),
+            ("Set_Built_Ai", Sorted(AiToolProcessNames.Concat(AiNameFragments.Select(f => $"*{f}*")))),
+            ("Set_Built_Shell", Sorted(InteractiveProcessNames)),
+        };
+    }
+
+    /// <summary>
+    /// The running programs worth offering in "Add from running programs": one per name, biggest memory first, without
+    /// anything already protected (the list only offers choices that change something) and without a name that could not
+    /// be added to the comma-separated list unchanged.
+    /// </summary>
+    internal static IReadOnlyList<(string Name, int Instances, long Bytes)> PickerCandidates(IEnumerable<(string Name, long Bytes)> running, int max = 80) =>
+        running
+            .GroupBy(p => StripExe(p.Name), StringComparer.OrdinalIgnoreCase)
+            .Where(g => !IsProcessProtected(g.Key) && !IsInteractive(g.Key) && !IsSecurityTool(g.Key) && !IsNeverTouch(g.Key)
+                        && ParseUserNames(g.Key) is [var only] && string.Equals(only, g.Key, StringComparison.OrdinalIgnoreCase))
+            .Select(g => (Name: g.Key, Instances: g.Count(), Bytes: g.Sum(p => p.Bytes)))
+            .OrderByDescending(c => c.Bytes).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(max).ToList();
+
     public static void SetUserNames(string? text) =>
         _userNames = new HashSet<string>(ParseUserNames(text), StringComparer.OrdinalIgnoreCase);
 

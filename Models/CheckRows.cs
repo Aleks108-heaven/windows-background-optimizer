@@ -49,7 +49,7 @@ internal static class CheckRows
                 c.Package.Version?.ToString() ?? None,
                 c.Package.Date?.ToString("yyyy-MM-dd") ?? None,
                 Loc.Instance[$"Ck_Drv_{c.Status}"],
-                c.Package.PublishedName ?? None,
+                c.Package.PublishedName ?? Loc.Instance["Ck_DrvBuiltInName"],
                 CleanupService.FormatBytes(c.Package.Bytes),
                 c.Package.Provider.Length > 0 ? c.Package.Provider : None,
                 c.Package.FolderName))

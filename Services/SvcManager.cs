@@ -35,6 +35,12 @@ public class SvcManager
     internal static string ToWmiStartMode(string mode) =>
         string.Equals(mode, "Auto", StringComparison.OrdinalIgnoreCase) ? "Automatic" : mode;
 
+    /// <summary>
+    /// WMI's return code 2 is "access denied": Windows owns some services (the WSL one, for example) and refuses a
+    /// change even from an administrator. That gets its own words, because "WMI error code 2" tells nobody that.
+    /// </summary>
+    internal static string FailureKey(uint wmiReturnCode) => wmiReturnCode == 2 ? "Msg_ServiceModeDenied" : "Msg_ServiceModeFailed";
+
     /// <param name="mode">"Auto"/"Automatic", "Manual", or "Disabled"</param>
     public ActionResult SetStartMode(ServiceEntry entry, string mode)
     {
@@ -58,7 +64,7 @@ public class SvcManager
                 entry.StartType = mode;
                 return new ActionResult(true, "Msg_ServiceModeChanged", entry.DisplayName, mode);
             }
-            return new ActionResult(false, "Msg_ServiceModeFailed", entry.DisplayName, returnCode);
+            return new ActionResult(false, FailureKey(returnCode), entry.DisplayName, returnCode);
         }
         catch (Exception ex)
         {

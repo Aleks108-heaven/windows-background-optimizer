@@ -201,16 +201,17 @@ public partial class MainWindow
         var picked = 0;
         foreach (var row in _driverRows)
             if (CopyFor(row) is { } copy && DriverStoreCleaner.CanDelete(copy)) { DriverGrid.SelectedItems.Add(row); picked++; }
-        if (picked == 0) Log(Loc.Instance["Ck_DrvNoneDeletable"]);
+        if (picked == 0) Log(Loc.Instance[DriverStoreCleaner.NothingToRemoveKey(_driverCopies)]);
+        else if (DriverStoreCleaner.CountBuiltIn(_driverCopies) is > 0 and var kept) Log(Loc.Instance.Format("Ck_DrvBuiltInKept", kept));
     }
 
     private async void DriverDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ViewOnlyBlocks()) return;
-        var chosen = DriverGrid.SelectedItems.OfType<DriverRow>()
-            .Select(CopyFor).OfType<DriverCopy>()
-            .Where(DriverStoreCleaner.CanDelete).ToList();
-        if (chosen.Count == 0) { Log(Loc.Instance["Ck_DrvNoneDeletable"]); return; }
+        var picked = DriverGrid.SelectedItems.OfType<DriverRow>().Select(CopyFor).OfType<DriverCopy>().ToList();
+        var chosen = picked.Where(DriverStoreCleaner.CanDelete).ToList();
+        if (chosen.Count == 0) { Log(Loc.Instance[DriverStoreCleaner.NothingToRemoveKey(picked)]); return; }
+        if (DriverStoreCleaner.CountBuiltIn(picked) is > 0 and var kept) Log(Loc.Instance.Format("Ck_DrvBuiltInKept", kept));
 
         var items = chosen.Select(c =>
             $"{c.Package.InfName}  {c.Package.Version}  ({c.Package.PublishedName}, {CleanupService.FormatBytes(c.Package.Bytes)})").ToList();

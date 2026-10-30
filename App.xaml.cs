@@ -72,7 +72,7 @@ public partial class App : System.Windows.Application
         catch { /* the running copy is still starting, or is an older build without the signal */ }
     }
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern bool AllowSetForegroundWindow(int processId);
 
     private static bool IsAnotherInstanceRunning(out int otherPid)

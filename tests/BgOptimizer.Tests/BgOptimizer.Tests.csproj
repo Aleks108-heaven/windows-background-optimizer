@@ -17,6 +17,11 @@
 
   <ItemGroup>
     <None Include="..\..\Theme.xaml" Link="Theme.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The windows and dialogs are parsed with the real theme, so a missing resource or a bad binding fails a test, not the launch of an elevated app. -->
+    <None Include="..\..\MainWindow.xaml" Link="xaml\MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\ConfirmDialog.xaml" Link="xaml\ConfirmDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\CodeDialog.xaml" Link="xaml\CodeDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\ProgramPickerDialog.xaml" Link="xaml\ProgramPickerDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
